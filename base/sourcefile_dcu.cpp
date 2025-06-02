@@ -3,6 +3,9 @@
 #include <vector>
 #include <random>
 #include <cmath>
+#include <chrono>  // 用于 CPU 计时
+#include <fstream> // 用于文件输出
+#include <iomanip> // 用于 std::fixed 和 std::setprecision
 
 
 // 编译
@@ -55,18 +58,16 @@ bool validate(const std::vector<double>& ref, const std::vector<double>& test) {
 
 int main() {
     std::vector<double> A(N * M), B(M * P), C(N * P), C_ref(N * P);
-    init_matrix(A, N * M); // 传递元素数量
-    init_matrix(B, M * P); // 传递元素数量
+    init_matrix(A, N * M); 
+    init_matrix(B, M * P); 
 
-    // CPU baseline
-    // 也可以计时 CPU baseline
-    // #include <chrono>
-    // auto cpu_start_time = std::chrono::high_resolution_clock::now();
+    // CPU baseline timing
+    auto cpu_start_time = std::chrono::high_resolution_clock::now();
     matmul_cpu(A, B, C_ref);
-    // auto cpu_end_time = std::chrono::high_resolution_clock::now();
-    // std::chrono::duration<double> cpu_duration = cpu_end_time - cpu_start_time;
-    // std::cout << "[CPU Baseline] Time: " << cpu_duration.count() << " s\n";
-
+    auto cpu_end_time = std::chrono::high_resolution_clock::now();
+    std::chrono::duration<double> cpu_duration = cpu_end_time - cpu_start_time;
+    double cpu_elapsed_seconds = cpu_duration.count();
+    std::cout << "[CPU Baseline] Time: " << std::fixed << std::setprecision(6) << cpu_elapsed_seconds << " s\n";
 
     // 主要修改部分
     // Allocate and copy to device, use matmul_kernel to compute in DCU
@@ -121,43 +122,75 @@ int main() {
     err = hipMalloc((void**)&d_C, size_C_bytes);
     if (err != hipSuccess) { std::cerr << "hipMalloc d_C failed: " << hipGetErrorString(err) << std::endl; hipFree(d_A); hipFree(d_B); return 1; }
 	
-    err = hipMemcpy(d_A, A.data(), size_A_bytes, hipMemcpyHostToDevice);
-    if (err != hipSuccess) { std::cerr << "hipMemcpy H2D d_A failed: " << hipGetErrorString(err) << std::endl; /* ... free memory ... */ return 1; }
-    err = hipMemcpy(d_B, B.data(), size_B_bytes, hipMemcpyHostToDevice);
-    if (err != hipSuccess) { std::cerr << "hipMemcpy H2D d_B failed: " << hipGetErrorString(err) << std::endl; /* ... free memory ... */ hipFree(d_A); hipFree(d_C); return 1; }
-
-
     dim3 threadsPerBlock(16, 16); 
     dim3 numBlocks((unsigned int)(P + threadsPerBlock.x - 1) / threadsPerBlock.x,
                    (unsigned int)(N + threadsPerBlock.y - 1) / threadsPerBlock.y);
 
-    // 示例：使用 HIP 事件计时内核
     hipEvent_t kernel_start, kernel_stop;
-    hipEventCreate(&kernel_start);
-    hipEventCreate(&kernel_stop);
+    hipEvent_t total_hip_start, total_hip_stop; // Declare total_hip_start and total_hip_stop
 
-    hipEventRecord(kernel_start, 0);
+    err = hipEventCreate(&kernel_start);
+    if (err != hipSuccess) { std::cerr << "hipEventCreate kernel_start failed: " << hipGetErrorString(err) << std::endl; /* cleanup */ return 1; }
+    err = hipEventCreate(&kernel_stop);
+    if (err != hipSuccess) { std::cerr << "hipEventCreate kernel_stop failed: " << hipGetErrorString(err) << std::endl; hipEventDestroy(kernel_start); /* cleanup */ return 1; }
+    err = hipEventCreate(&total_hip_start); // For total HIP operation time
+    if (err != hipSuccess) { std::cerr << "hipEventCreate total_hip_start failed: " << hipGetErrorString(err) << std::endl; hipEventDestroy(kernel_start); hipEventDestroy(kernel_stop); /* cleanup */ return 1; }
+    err = hipEventCreate(&total_hip_stop);
+    if (err != hipSuccess) { std::cerr << "hipEventCreate total_hip_stop failed: " << hipGetErrorString(err) << std::endl; hipEventDestroy(kernel_start); hipEventDestroy(kernel_stop); hipEventDestroy(total_hip_start); /* cleanup */ return 1; }
+
+    err = hipEventRecord(total_hip_start, 0); // Start timing total HIP operations
+    if (err != hipSuccess) { std::cerr << "hipEventRecord total_hip_start failed: " << hipGetErrorString(err) << std::endl; /* cleanup */ return 1; }
+
+    err = hipMemcpy(d_A, A.data(), size_A_bytes, hipMemcpyHostToDevice);
+    if (err != hipSuccess) { std::cerr << "hipMemcpy H2D d_A failed: " << hipGetErrorString(err) << std::endl; /* ... free memory ... */ return 1; }
+    err = hipMemcpy(d_B, B.data(), size_B_bytes, hipMemcpyHostToDevice);
+    if (err != hipSuccess) { std::cerr << "hipMemcpy H2D d_B failed: " << hipGetErrorString(err) << std::endl; /* ... free memory ... */ hipFree(d_A); return 1; }
+
+
+    err = hipEventRecord(kernel_start, 0);
+    if (err != hipSuccess) { std::cerr << "hipEventRecord kernel_start failed: " << hipGetErrorString(err) << std::endl; /* cleanup */ return 1; }
+    
     hipLaunchKernelGGL(matmul_kernel, numBlocks, threadsPerBlock, 0, 0, d_A, d_B, d_C, N, M, P);
-    hipEventRecord(kernel_stop, 0);
-    
-    err = hipGetLastError(); // 检查内核启动错误
-    if (err != hipSuccess) { std::cerr << "Kernel launch failed: " << hipGetErrorString(err) << std::endl; /* ... free memory ... */ hipFree(d_A); hipFree(d_B); hipFree(d_C); hipEventDestroy(kernel_start); hipEventDestroy(kernel_stop); return 1; }
-    
-    // 可选：同步设备以确保内核完成，尽管hipMemcpy D2H是阻塞的
-    // err = hipDeviceSynchronize();
-    // if (err != hipSuccess) { std::cerr << "hipDeviceSynchronize failed: " << hipGetErrorString(err) << std::endl; /* ... free memory ... */ return 1; }
+    err = hipGetLastError(); // Check kernel launch error separately
+    if (err != hipSuccess) { std::cerr << "Kernel launch failed: " << hipGetErrorString(err) << std::endl; /* ... free memory and events ... */ return 1; }
 
+    err = hipEventRecord(kernel_stop, 0);
+    if (err != hipSuccess) { std::cerr << "hipEventRecord kernel_stop failed: " << hipGetErrorString(err) << std::endl; /* cleanup */ return 1; }
+    
     err = hipMemcpy(C.data(), d_C, size_C_bytes, hipMemcpyDeviceToHost);
-    if (err != hipSuccess) { std::cerr << "hipMemcpy D2H d_C failed: " << hipGetErrorString(err) << std::endl; /* ... free memory ... */ hipFree(d_A); hipFree(d_B); hipFree(d_C); hipEventDestroy(kernel_start); hipEventDestroy(kernel_stop); return 1; }
-    
-    // 等待内核完成并计算时间
-    hipEventSynchronize(kernel_stop);
-    float kernel_milliseconds = 0;
-    hipEventElapsedTime(&kernel_milliseconds, kernel_start, kernel_stop);
-    std::cout << "[HIP Kernel] Execution Time: " << kernel_milliseconds / 1000.0 << " s" << std::endl;
+    if (err != hipSuccess) { std::cerr << "hipMemcpy D2H d_C failed: " << hipGetErrorString(err) << std::endl; /* ... free memory and events ... */ return 1; }
 
-    hipEventDestroy(kernel_start);
+    err = hipEventRecord(total_hip_stop, 0); // Stop timing total HIP operations
+    if (err != hipSuccess) { std::cerr << "hipEventRecord total_hip_stop failed: " << hipGetErrorString(err) << std::endl; /* cleanup */ return 1; }
+    
+    err = hipEventSynchronize(total_hip_stop); // Ensure all HIP operations are done
+    if (err != hipSuccess) { std::cerr << "hipEventSynchronize total_hip_stop failed: " << hipGetErrorString(err) << std::endl; /* cleanup */ return 1; }
+
+
+    float kernel_milliseconds = 0;
+    err = hipEventElapsedTime(&kernel_milliseconds, kernel_start, kernel_stop); 
+    if (err != hipSuccess) { std::cerr << "hipEventElapsedTime kernel failed: " << hipGetErrorString(err) << std::endl; /* cleanup */ return 1; }
+    double hip_kernel_seconds = kernel_milliseconds / 1000.0;
+    std::cout << "[HIP Kernel] Execution Time: " << std::fixed << std::setprecision(6) << hip_kernel_seconds << " s" << std::endl;
+
+    float total_hip_milliseconds = 0;
+    err = hipEventElapsedTime(&total_hip_milliseconds, total_hip_start, total_hip_stop);
+    if (err != hipSuccess) { std::cerr << "hipEventElapsedTime total_hip failed: " << hipGetErrorString(err) << std::endl; /* cleanup */ return 1; }
+    double total_hip_seconds = total_hip_milliseconds / 1000.0;
+    std::cout << "[HIP Total (Memcpy+Kernel)] Execution Time: " << std::fixed << std::setprecision(6) << total_hip_seconds << " s" << std::endl;
+
+
+    // hipEventDestroy(kernel_start); // These will be handled below
+    // hipEventDestroy(kernel_stop);
+    // hipEventDestroy(total_hip_start);
+    // hipEventDestroy(total_hip_stop);
+
+    // Cleanup all events and memory
+    // Errors during destroy are typically logged but not critical for program flow.
+    hipEventDestroy(kernel_start); 
     hipEventDestroy(kernel_stop);
+    hipEventDestroy(total_hip_start);
+    hipEventDestroy(total_hip_stop);
 
     if (validate(C_ref, C)) {
        std::cout << "[HIP] Valid: 1" << std::endl;
@@ -169,7 +202,20 @@ int main() {
     hipFree(d_B);
     hipFree(d_C);
     
-    // 需额外增加性能评测代码或其他工具进行评测
-    // 例如，将 cpu_duration.count() 和 kernel_milliseconds / 1000.0 写入文件
+    // 将结果写入 CSV 文件
+    std::ofstream outfile("dcu_performance_data.csv", std::ios_base::app);
+    if (outfile.is_open()) {
+        outfile.seekp(0, std::ios_base::end);
+        if (outfile.tellp() == 0) {
+            outfile << "Method,Time\n";
+        }
+        outfile << "CPU_Baseline_for_DCU_comparison," << std::fixed << std::setprecision(6) << cpu_elapsed_seconds << "\n";
+        outfile << "HIP_Kernel," << std::fixed << std::setprecision(6) << hip_kernel_seconds << "\n";
+        outfile << "HIP_Total_Incl_Memcpy," << std::fixed << std::setprecision(6) << total_hip_seconds << "\n";
+        outfile.close();
+    } else {
+        std::cerr << "Unable to open dcu_performance_data.csv for results." << std::endl;
+    }
+    
     return 0;
 }

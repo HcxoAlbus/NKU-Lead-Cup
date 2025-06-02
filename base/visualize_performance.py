@@ -1,117 +1,227 @@
+import matplotlib
+matplotlib.use('Agg')  # 使用非交互式后端，适合服务器环境
 import matplotlib.pyplot as plt
 import numpy as np
+import csv
+import os
 
-def plot_performance_comparison(methods, times, title="Performance Comparison"):
+# 设置 matplotlib 使用默认字体，避免中文字体问题
+plt.rcParams['font.family'] = ['DejaVu Sans', 'Arial', 'sans-serif']  # 使用系统默认字体
+plt.rcParams['axes.unicode_minus'] = False  # 解决负号'-'显示为方块的问题
+
+def plot_performance_comparison(methods, times, title="Performance Comparison", save_prefix="cpu_performance"):
     """
-    生成并显示不同优化方法的性能对比柱状图。
+    Generate and save performance comparison bar chart for different optimization methods.
 
-    参数:
-    methods (list of str): 优化方法的名称列表。
-    times (list of float): 对应方法的执行时间列表 (例如，秒)。
-    title (str): 图表的标题。
+    Parameters:
+    methods (list of str): List of optimization method names.
+    times (list of float): List of execution times (in seconds).
+    title (str): Chart title.
+    save_prefix (str): File prefix for saving.
     """
     if not methods or not times or len(methods) != len(times):
-        print("错误: 方法和时间列表不能为空，且长度必须相同。")
+        print("Error: Methods and times lists cannot be empty and must have the same length.")
         return
 
     x_pos = np.arange(len(methods))
 
-    plt.figure(figsize=(10, 6))
-    bars = plt.bar(x_pos, times, align='center', alpha=0.7, color=['skyblue', 'lightcoral', 'lightgreen', 'gold', 'plum'])
+    plt.figure(figsize=(15, 8)) # Increase image size to accommodate more data
+    colors = plt.cm.Set3(np.linspace(0, 1, len(methods)))  # Use colormap to generate enough colors
+    bars = plt.bar(x_pos, times, align='center', alpha=0.7, color=colors)
     
     plt.xticks(x_pos, methods, rotation=45, ha="right")
     plt.ylabel('Execution Time (seconds)')
     plt.title(title)
-    plt.grid(axis='y', linestyle='--')
+    plt.grid(axis='y', linestyle='--', alpha=0.7)
 
-    # 在柱状图上显示数值
+    # Display values on bars
     for bar in bars:
         yval = bar.get_height()
-        plt.text(bar.get_x() + bar.get_width()/2.0, yval + 0.01 * max(times), f'{yval:.4f}', ha='center', va='bottom')
+        plt.text(bar.get_x() + bar.get_width()/2.0, yval + 0.01 * max(times), f'{yval:.4f}', ha='center', va='bottom', fontsize=8)
 
-    plt.tight_layout() # 调整布局以防止标签重叠
-    plt.show()
+    plt.tight_layout() # Adjust layout to prevent label overlap
+    
+    # Save image
+    filename = f"{save_prefix}_comparison.png"
+    plt.savefig(filename, dpi=150, bbox_inches='tight')
+    print(f"Performance comparison chart saved as: {filename}")
+    plt.close()  # Close figure to free memory
 
-def plot_speedup_comparison(baseline_time, methods, times, title="Speedup Comparison vs Baseline"):
+def plot_speedup_comparison(baseline_time, methods, times, title="Speedup Comparison (vs Baseline)", save_prefix="cpu_speedup"):
     """
-    生成并显示不同优化方法相对于基线的加速比对比柱状图。
+    Generate and save speedup comparison bar chart relative to baseline.
 
-    参数:
-    baseline_time (float): 基线方法的执行时间。
-    methods (list of str): 优化方法的名称列表 (不包括基线)。
-    times (list of float): 对应优化方法的执行时间列表。
-    title (str): 图表的标题。
+    Parameters:
+    baseline_time (float): Baseline method execution time.
+    methods (list of str): List of optimization method names (excluding baseline).
+    times (list of float): List of corresponding optimization method execution times.
+    title (str): Chart title.
+    save_prefix (str): File prefix for saving.
     """
     if baseline_time <= 0:
-        print("错误: 基线时间必须为正数。")
+        print("Error: Baseline time must be positive.")
         return
     if not methods or not times or len(methods) != len(times):
-        print("错误: 方法和时间列表不能为空，且长度必须相同。")
+        print("Error: Methods and times lists cannot be empty and must have the same length.")
         return
 
-    speedups = [baseline_time / t if t > 0 else 0 for t in times] # 计算加速比
+    speedups = [baseline_time / t if t > 0 else 0 for t in times] 
     x_pos = np.arange(len(methods))
 
-    plt.figure(figsize=(10, 6))
-    bars = plt.bar(x_pos, speedups, align='center', alpha=0.7, color=['lightcoral', 'lightgreen', 'gold', 'plum'])
+    plt.figure(figsize=(15, 8)) # Increase image size
+    colors = plt.cm.Set2(np.linspace(0, 1, len(methods)))  # Use different colormap
+    bars = plt.bar(x_pos, speedups, align='center', alpha=0.7, color=colors)
     
     plt.xticks(x_pos, methods, rotation=45, ha="right")
     plt.ylabel('Speedup (Baseline Time / Method Time)')
     plt.title(title)
-    plt.axhline(1, color='grey', linestyle='--', linewidth=0.8) # 加速比为1的参考线
-    plt.grid(axis='y', linestyle='--')
+    plt.axhline(1, color='red', linestyle='--', linewidth=1.0, alpha=0.8, label='No speedup reference line (1x)') # Reference line for speedup = 1
+    plt.grid(axis='y', linestyle='--', alpha=0.7)
+    plt.legend()
 
     for bar in bars:
         yval = bar.get_height()
-        plt.text(bar.get_x() + bar.get_width()/2.0, yval + 0.01 * max(speedups), f'{yval:.2f}x', ha='center', va='bottom')
+        plt.text(bar.get_x() + bar.get_width()/2.0, yval + 0.01 * max(speedups), f'{yval:.2f}x', ha='center', va='bottom', fontsize=8)
     
     plt.tight_layout()
-    plt.show()
+    
+    # Save image
+    filename = f"{save_prefix}_speedup.png"
+    plt.savefig(filename, dpi=150, bbox_inches='tight')
+    print(f"Speedup comparison chart saved as: {filename}")
+    plt.close()  # Close figure to free memory
+
+def read_performance_data(csv_filepath):
+    """
+    Read performance data from specified CSV file.
+    Returns a dictionary with method names as keys and latest execution times as values.
+    """
+    data = {}
+    if not os.path.exists(csv_filepath):
+        print(f"Warning: CSV file not found: {csv_filepath}")
+        return data
+        
+    try:
+        with open(csv_filepath, mode='r', newline='', encoding='utf-8') as infile:
+            reader = csv.reader(infile)
+            header = next(reader, None) # Skip header
+            if header is None or [h.strip() for h in header] != ['Method', 'Time']:
+                print(f"Warning: {csv_filepath} header format incorrect. Expected 'Method,Time'")
+                # Try to continue reading, assuming two-column format
+            
+            for row in reader:
+                if len(row) == 2:
+                    method = row[0].strip()
+                    try:
+                        time = float(row[1].strip())
+                        data[method] = time # If duplicate, keep the last one
+                    except ValueError:
+                        print(f"Warning: Skipping invalid time value in {csv_filepath}: {row[1]} (method: {method})")
+                else:
+                    print(f"Warning: Skipping incorrectly formatted line in {csv_filepath}: {row}")
+    except Exception as e:
+        print(f"Error reading CSV file {csv_filepath}: {e}")
+    return data
 
 if __name__ == '__main__':
-    # 示例数据：这些数据应从您的性能分析工具 (如 rocprof) 或计时代码中获取
-    # 请将这些占位符值替换为您的实际测量结果
+    # Read data from CSV files
+    cpu_data_file = "cpu_performance_data.csv"
+    dcu_data_file = "dcu_performance_data.csv"
+
+    cpu_perf_data = read_performance_data(cpu_data_file)
+    dcu_perf_data = read_performance_data(dcu_data_file)
+
+    # Scenario 1: Compare execution times of different CPU optimization methods
+    # Define expected CPU method order for chart display
+    # MPI method names may include process count, e.g., 'MPI_np4'
+    # We need to dynamically extract MPI data from cpu_perf_data
     
-    # 场景1: 比较不同 CPU 优化方法的执行时间
-    cpu_method_names = ['Baseline', 'OpenMP', 'Block Tiling', 'Other (Loop Order)']
-    # 假设的执行时间 (秒) - 请替换为实际数据
-    cpu_execution_times = [15.5, 4.2, 3.8, 14.9] 
-    plot_performance_comparison(cpu_method_names, cpu_execution_times, 
-                                title="CPU Matrix Multiplication Performance")
+    cpu_method_order = [
+        'Baseline', 
+        'OpenMP', 
+        'BlockTiling_bs16', 'BlockTiling_bs32', 'BlockTiling_bs64', 'BlockTiling_bs96', 'BlockTiling_bs128', 'BlockTiling_bs192', 'BlockTiling_bs256',
+        'BlockTilingOuterOmp_bs16', 'BlockTilingOuterOmp_bs32', 'BlockTilingOuterOmp_bs64', 'BlockTilingOuterOmp_bs96', 'BlockTilingOuterOmp_bs128', 'BlockTilingOuterOmp_bs192', 'BlockTilingOuterOmp_bs256',
+        'BlockTilingImproved_bs16', 'BlockTilingImproved_bs32', 'BlockTilingImproved_bs64', 'BlockTilingImproved_bs96', 'BlockTilingImproved_bs128', 'BlockTilingImproved_bs192', 'BlockTilingImproved_bs256',
+        'BlockTilingCacheOpt_bs16', 'BlockTilingCacheOpt_bs32', 'BlockTilingCacheOpt_bs64', 'BlockTilingCacheOpt_bs96', 'BlockTilingCacheOpt_bs128', 'BlockTilingCacheOpt_bs192', 'BlockTilingCacheOpt_bs256',
+        'OtherLoopOrder'
+    ]
+    # Dynamically add MPI data
+    mpi_methods_in_data = sorted([m for m in cpu_perf_data if m.startswith("MPI_np")])
+    all_cpu_methods_to_plot = cpu_method_order + mpi_methods_in_data
+    
+    cpu_plot_methods = []
+    cpu_plot_times = []
+    for method in all_cpu_methods_to_plot:
+        if method in cpu_perf_data:
+            cpu_plot_methods.append(method)
+            cpu_plot_times.append(cpu_perf_data[method])
+        else:
+            print(f"Info: CPU method '{method}' data not found in {cpu_data_file}.")
 
-    # 场景2: 比较 CPU 基线与 DCU (HIP) 的执行时间
-    # 注意: DCU 时间应包括数据传输时间，或单独分析计算核心时间和总时间
-    overall_method_names = ['CPU Baseline', 'HIP (DCU)']
-    # 假设的执行时间 (秒) - 请替换为实际数据
-    overall_execution_times = [15.5, 0.5] # 假设 HIP 非常快
-    plot_performance_comparison(overall_method_names, overall_execution_times,
-                                title="CPU vs DCU Matrix Multiplication Performance")
+    if cpu_plot_methods:
+        plot_performance_comparison(cpu_plot_methods, cpu_plot_times, 
+                                    title="CPU Matrix Multiplication Performance", save_prefix="cpu_performance")
+        
+        # Scenario 1.1: CPU optimization methods speedup (relative to CPU Baseline)
+        if 'Baseline' in cpu_perf_data and cpu_perf_data['Baseline'] > 0:
+            baseline_cpu_time = cpu_perf_data['Baseline']
+            optimized_cpu_plot_methods = []
+            optimized_cpu_plot_times = []
+            # Exclude 'Baseline' from cpu_plot_methods
+            for i, method in enumerate(cpu_plot_methods):
+                if method != 'Baseline':
+                    optimized_cpu_plot_methods.append(method)
+                    optimized_cpu_plot_times.append(cpu_plot_times[i])
+            
+            if optimized_cpu_plot_methods:
+                 plot_speedup_comparison(baseline_cpu_time, optimized_cpu_plot_methods, optimized_cpu_plot_times,
+                                        title="CPU Optimization Speedup (vs Baseline)", save_prefix="cpu_speedup")
+    else:
+        print(f"No sufficient CPU performance data found for plotting ({cpu_data_file}).")
 
-    # 场景3: CPU 优化方法的加速比 (相对于 CPU Baseline)
-    # 从 cpu_execution_times 中提取基线时间和优化方法的时间
-    if cpu_execution_times and len(cpu_execution_times) > 0:
-        baseline_cpu_time = cpu_execution_times[0]
-        optimized_cpu_methods = cpu_method_names[1:]
-        optimized_cpu_times = cpu_execution_times[1:]
-        if optimized_cpu_methods: # 确保有优化方法可比较
-             plot_speedup_comparison(baseline_cpu_time, optimized_cpu_methods, optimized_cpu_times,
-                                    title="CPU Optimization Speedup vs Baseline")
 
-    # 场景4: MPI 性能随进程数扩展 (示例)
-    # 这类图通常是折线图，显示执行时间或加速比如何随进程数变化
-    # 此处仍用柱状图简单示意，实际可能需要收集不同进程数下的数据
-    mpi_processes = ['MPI (1 proc)', 'MPI (2 procs)', 'MPI (4 procs)', 'MPI (8 procs)']
-    # 假设的执行时间 (秒) - 请替换为实际数据
-    mpi_times = [16.0, 8.5, 4.8, 2.9] 
-    plot_performance_comparison(mpi_processes, mpi_times, title="MPI Performance Scaling (Execution Time)")
+    # Scenario 2: Compare CPU baseline with DCU (HIP) execution times
+    # Usually comparing CPU baseline from sourcefile_dcu.cpp with HIP kernel/total time
+    dcu_comparison_methods_order = ['CPU_Baseline_for_DCU_comparison', 'HIP_Kernel', 'HIP_Total_Incl_Memcpy']
+    dcu_plot_methods = []
+    dcu_plot_times = []
 
-    # 也可以绘制 MPI 加速比图
-    if mpi_times and len(mpi_times) > 0:
-        # 假设单进程 MPI 作为此处的 "基线"
-        plot_speedup_comparison(mpi_times[0], mpi_processes[1:], mpi_times[1:],
-                                title="MPI Speedup vs Single Process MPI")
+    for method in dcu_comparison_methods_order:
+        if method in dcu_perf_data:
+            dcu_plot_methods.append(method)
+            dcu_plot_times.append(dcu_perf_data[method])
+        else:
+            print(f"Info: DCU/HIP method '{method}' data not found in {dcu_data_file}.")
+            
+    if dcu_plot_methods:
+        plot_performance_comparison(dcu_plot_methods, dcu_plot_times,
+                                    title="CPU (for DCU) vs HIP Performance", save_prefix="dcu_performance")
 
-    print("性能图已生成 (如果 matplotlib 已配置为显示它们)。")
-    print("请将占位符数据替换为您从性能分析中获得的实际测量值。")
-    print("您可以通过计时您的 C++ 应用程序或使用工具 (如 rocprof) 获取这些时间。")
-    print("例如，rocprof 可以输出 CSV 文件，您可以使用 Python 解析这些文件。")
+        # Scenario 2.1: HIP speedup (relative to its corresponding CPU baseline)
+        if 'CPU_Baseline_for_DCU_comparison' in dcu_perf_data and dcu_perf_data['CPU_Baseline_for_DCU_comparison'] > 0:
+            baseline_dcu_cpu_time = dcu_perf_data['CPU_Baseline_for_DCU_comparison']
+            optimized_dcu_plot_methods = []
+            optimized_dcu_plot_times = []
+            for i, method in enumerate(dcu_plot_methods):
+                if method != 'CPU_Baseline_for_DCU_comparison': # Only compare HIP methods
+                    optimized_dcu_plot_methods.append(method)
+                    optimized_dcu_plot_times.append(dcu_plot_times[i])
+            
+            if optimized_dcu_plot_methods:
+                plot_speedup_comparison(baseline_dcu_cpu_time, optimized_dcu_plot_methods, optimized_dcu_plot_times,
+                                        title="HIP Speedup (vs CPU_Baseline_for_DCU_comparison)", save_prefix="hip_speedup")
+    else:
+        print(f"No sufficient DCU/HIP performance data found for plotting ({dcu_data_file}).")
+
+
+    if not cpu_plot_methods and not dcu_plot_methods:
+         print("\nNo data loaded from CSV files. Please run C++ programs first to generate data files:")
+         print(f" - {cpu_data_file}")
+         print(f" - {dcu_data_file}")
+
+    print("\nScript execution completed. Charts have been saved as PNG files.")
+    print("Generated files:")
+    print(" - cpu_performance_comparison.png")
+    print(" - cpu_speedup_speedup.png")
+    print(" - dcu_performance_comparison.png (if DCU data available)")
+    print(" - hip_speedup_speedup.png (if DCU data available)")

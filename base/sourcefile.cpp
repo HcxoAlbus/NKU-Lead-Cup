@@ -5,6 +5,10 @@
 #include <algorithm>
 #include <omp.h>
 #include <mpi.h>
+#include <chrono> // 用于计时
+#include <fstream> // 用于文件输出
+#include <string>    // 用于 std::to_string
+#include <iomanip>   // 用于 std::fixed 和 std::setprecision
 
 // 编译执行方式参考：
 // 编译， 也可以使用g++，但使用MPI时需使用mpic
@@ -50,7 +54,7 @@ void matmul_baseline(const std::vector<double>& A,
                      std::vector<double>& C, int N, int M, int P) {
     for (int i = 0; i < N; ++i)
         for (int j = 0; j < P; ++j) {
-            C[i * P + j] = 0;
+            C[i * P + j] = 0; // 确保 C 被正确初始化或重置
             for (int k = 0; k < M; ++k)
                 C[i * P + j] += A[i * M + k] * B[k * P + j];
         }
@@ -74,10 +78,11 @@ void matmul_openmp(const std::vector<double>& A,
 }
 
 // 方式2: 利用子块并行思想，进行缓存友好型的并行优化方法 （主要修改函数)
+// 使用 collapse(2)
 void matmul_block_tiling(const std::vector<double>& A,
                          const std::vector<double>& B,
-                         std::vector<double>& C, int N, int M, int P, int block_size = 64) {
-	std::cout << "matmul_block_tiling methods..." << std::endl;
+                         std::vector<double>& C, int N, int M, int P, int block_size) { // block_size 作为参数
+	std::cout << "matmul_block_tiling (collapse(2)) with block_size " << block_size << " methods..." << std::endl;
     // C 矩阵应由调用者初始化为0，main函数中已执行此操作。
     #pragma omp parallel for collapse(2)
     for (int ii = 0; ii < N; ii += block_size) {
@@ -98,12 +103,103 @@ void matmul_block_tiling(const std::vector<double>& A,
     }
 }
 
+// 方式2的变体: 子块并行，但仅并行化最外层循环
+void matmul_block_tiling_outer_omp(const std::vector<double>& A,
+                                   const std::vector<double>& B,
+                                   std::vector<double>& C, int N, int M, int P, int block_size) {
+    std::cout << "matmul_block_tiling_outer_omp (outer loop parallel) with block_size " << block_size << " methods..." << std::endl;
+    // C 矩阵应由调用者初始化为0。
+    #pragma omp parallel for
+    for (int ii = 0; ii < N; ii += block_size) {
+        for (int jj = 0; jj < P; jj += block_size) {
+            for (int kk = 0; kk < M; kk += block_size) {
+                for (int i = ii; i < std::min(ii + block_size, N); ++i) {
+                    for (int j = jj; j < std::min(jj + block_size, P); ++j) {
+                        for (int k = kk; k < std::min(kk + block_size, M); ++k) {
+                            C[i * P + j] += A[i * M + k] * B[k * P + j];
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// 改进的分块算法：减少开销，优化内存访问模式
+void matmul_block_tiling_improved(const std::vector<double>& A,
+                                  const std::vector<double>& B,
+                                  std::vector<double>& C, int N, int M, int P, int block_size) {
+    std::cout << "matmul_block_tiling_improved with block_size " << block_size << " methods..." << std::endl;
+    
+    #pragma omp parallel for schedule(dynamic)
+    for (int ii = 0; ii < N; ii += block_size) {
+        const int i_end = std::min(ii + block_size, N);
+        for (int jj = 0; jj < P; jj += block_size) {
+            const int j_end = std::min(jj + block_size, P);
+            for (int kk = 0; kk < M; kk += block_size) {
+                const int k_end = std::min(kk + block_size, M);
+                
+                // 内层循环展开并优化：使用(i,k,j)顺序改善缓存局部性
+                for (int i = ii; i < i_end; ++i) {
+                    for (int k = kk; k < k_end; ++k) {
+                        const double a_ik = A[i * M + k];
+                        for (int j = jj; j < j_end; ++j) {
+                            C[i * P + j] += a_ik * B[k * P + j];
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// 缓存优化的分块算法：针对特定缓存大小优化
+void matmul_block_tiling_cache_opt(const std::vector<double>& A,
+                                   const std::vector<double>& B,
+                                   std::vector<double>& C, int N, int M, int P, int block_size) {
+    std::cout << "matmul_block_tiling_cache_opt with block_size " << block_size << " methods..." << std::endl;
+    
+    // 使用更细粒度的并行策略
+    #pragma omp parallel
+    {
+        #pragma omp for schedule(guided) nowait
+        for (int ii = 0; ii < N; ii += block_size) {
+            const int i_end = std::min(ii + block_size, N);
+            
+            for (int jj = 0; jj < P; jj += block_size) {
+                const int j_end = std::min(jj + block_size, P);
+                
+                for (int kk = 0; kk < M; kk += block_size) {
+                    const int k_end = std::min(kk + block_size, M);
+                    
+                    // 使用寄存器缓存优化和向量化
+                    for (int i = ii; i < i_end; ++i) {
+                        for (int k = kk; k < k_end; ++k) {
+                            const double a_val = A[i * M + k];
+                            // 向量化友好的内层循环
+                            #pragma omp simd
+                            for (int j = jj; j < j_end; ++j) {
+                                C[i * P + j] += a_val * B[k * P + j];
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 // 方式3: 利用MPI消息传递，实现多进程并行优化 （主要修改函数）
-void matmul_mpi(int N, int M, int P) {
+void matmul_mpi(int N, int M, int P, double& elapsed_time) { // 添加 elapsed_time引用
     std::cout << "matmul_mpi methods..." << std::endl;
     int rank, size;
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_size(MPI_COMM_WORLD, &size);
+
+    double mpi_start_time = 0.0, mpi_end_time = 0.0;
+    if (rank == 0) {
+        mpi_start_time = MPI_Wtime();
+    }
 
     std::vector<double> A_global, B_global(M * P), C_global;
     if (rank == 0) {
@@ -166,9 +262,28 @@ void matmul_mpi(int N, int M, int P) {
                 0, MPI_COMM_WORLD);
 
     if (rank == 0) {
+        mpi_end_time = MPI_Wtime();
+        elapsed_time = mpi_end_time - mpi_start_time;
         std::cout << "[MPI] Computation done. Result gathered on rank 0." << std::endl;
+        std::cout << "[MPI] Execution Time: " << std::fixed << std::setprecision(6) << elapsed_time << " s" << std::endl;
+        
+        // 将结果写入 CSV 文件
+        std::ofstream outfile("cpu_performance_data.csv", std::ios_base::app);
+        if (outfile.is_open()) {
+            // 检查文件是否为空，如果为空则写入表头
+            outfile.seekp(0, std::ios_base::end); // 转到文件末尾
+            if (outfile.tellp() == 0) {
+                outfile << "Method,Time\n";
+            }
+            outfile << "MPI_np" << size << "," << std::fixed << std::setprecision(6) << elapsed_time << "\n";
+            outfile.close();
+        } else {
+            std::cerr << "Unable to open cpu_performance_data.csv for MPI results." << std::endl;
+        }
         // 可选：在 rank 0 上进行验证
         // std::vector<double> C_ref_mpi(N * P);
+        // init_matrix(A_global, N, M); // 确保 A_global 被初始化以进行验证
+        // init_matrix(B_global, M, P); // 确保 B_global 被初始化以进行验证
         // matmul_baseline(A_global, B_global, C_ref_mpi, N, M, P);
         // std::cout << "[MPI] Valid: " << validate(C_global, C_ref_mpi, N, P) << std::endl;
     }
@@ -194,87 +309,120 @@ void matmul_other(const std::vector<double>& A,
 int main(int argc, char** argv) {
     const int N = 1024, M = 2048, P = 512;
     std::string mode = argc >= 2 ? argv[1] : "baseline";
+    double elapsed_seconds = 0.0;
+    std::string method_name_for_csv;
 
-    // 性能分析提示:
-    // 1. 使用 rocprof:
-    //    例如: rocprof --stats -o results.csv ./outputfile openmp
-    //    然后，您可以解析 results.csv 文件以获取内核执行时间。
-    // 2. 在代码中手动计时 (适用于 CPU 端代码):
-    //    #include <chrono>
-    //    auto start_time = std::chrono::high_resolution_clock::now();
-    //    // ... 要计时的代码 ...
-    //    auto end_time = std::chrono::high_resolution_clock::now();
-    //    std::chrono::duration<double> diff = end_time - start_time;
-    //    std::cout << "Execution time: " << diff.count() << " s\n";
-    //    将这些时间输出或记录到文件，然后用于 Python 可视化脚本。
 
     if (mode == "mpi") {
         MPI_Init(&argc, &argv);
-        // 对于 MPI，通常在 rank 0 记录总时间，或使用 MPI_Wtime()
-        // double mpi_start_time, mpi_end_time;
-        // if (rank == 0) mpi_start_time = MPI_Wtime();
-        matmul_mpi(N, M, P);
-        // if (rank == 0) {
-        //     mpi_end_time = MPI_Wtime();
-        //     std::cout << "MPI Execution time: " << (mpi_end_time - mpi_start_time) << " s\n";
-        // }
+        // elapsed_time 会在 matmul_mpi 内部处理并写入文件
+        matmul_mpi(N, M, P, elapsed_seconds); // elapsed_seconds 会被 matmul_mpi 更新 (仅rank 0)
         MPI_Finalize();
-        return 0;
+        return 0; // MPI 模式在此处返回，因为它自己处理文件写入
     }
 
     std::vector<double> A(N * M);
     std::vector<double> B(M * P);
-    std::vector<double> C(N * P, 0); // C 初始化为0
+    std::vector<double> C(N * P, 0); 
     std::vector<double> C_ref(N * P, 0);
 
     init_matrix(A, N, M);
     init_matrix(B, M, P);
-
-    // 计时 baseline
-    // auto baseline_start = std::chrono::high_resolution_clock::now();
+    
+    // 首先计算一次基准C_ref，用于验证，这个时间不计入对比，除非mode是baseline
     matmul_baseline(A, B, C_ref, N, M, P);
-    // auto baseline_end = std::chrono::high_resolution_clock::now();
-    // std::chrono::duration<double> baseline_duration = baseline_end - baseline_start;
-    // std::cout << "[Baseline] Time: " << baseline_duration.count() << " s\n";
 
 
     if (mode == "baseline") {
-        std::cout << "[Baseline] Done.\n";
-        // 输出 baseline_duration.count()
+        method_name_for_csv = "Baseline";
+        auto start = std::chrono::high_resolution_clock::now();
+        matmul_baseline(A, B, C, N, M, P); // 重新计算C以计时
+        auto end = std::chrono::high_resolution_clock::now();
+        std::chrono::duration<double> diff = end - start;
+        elapsed_seconds = diff.count();
+        std::cout << "[Baseline] Time: " << std::fixed << std::setprecision(6) << elapsed_seconds << " s\n";
+        std::cout << "[Baseline] Valid: " << validate(C, C_ref, N, P) << std::endl;
     } else if (mode == "openmp") {
-        // auto openmp_start = std::chrono::high_resolution_clock::now();
+        method_name_for_csv = "OpenMP";
+        auto start = std::chrono::high_resolution_clock::now();
         matmul_openmp(A, B, C, N, M, P);
-        // auto openmp_end = std::chrono::high_resolution_clock::now();
-        // std::chrono::duration<double> openmp_duration = openmp_end - openmp_start;
-        // std::cout << "[OpenMP] Time: " << openmp_duration.count() << " s\n";
+        auto end = std::chrono::high_resolution_clock::now();
+        std::chrono::duration<double> diff = end - start;
+        elapsed_seconds = diff.count();
+        std::cout << "[OpenMP] Time: " << std::fixed << std::setprecision(6) << elapsed_seconds << " s\n";
         std::cout << "[OpenMP] Valid: " << validate(C, C_ref, N, P) << std::endl;
-        // 输出 openmp_duration.count()
-    } else if (mode == "block") {
-        // auto block_start = std::chrono::high_resolution_clock::now();
-        matmul_block_tiling(A, B, C, N, M, P);
-        // auto block_end = std::chrono::high_resolution_clock::now();
-        // std::chrono::duration<double> block_duration = block_end - block_start;
-        // std::cout << "[Block Parallel] Time: " << block_duration.count() << " s\n";
-        std::cout << "[Block Parallel] Valid: " << validate(C, C_ref, N, P) << std::endl;
-        // 输出 block_duration.count()
+    } else if (mode == "block" || mode == "block_outer_omp" || mode == "block_improved" || mode == "block_cache_opt") {
+        if (argc < 3) {
+            std::cerr << "错误: 模式 " << mode << " 需要一个 block_size 参数。" << std::endl;
+            return 1;
+        }
+        int block_size_val = 0;
+        try {
+            block_size_val = std::stoi(argv[2]);
+        } catch (const std::invalid_argument& ia) {
+            std::cerr << "错误: 无效的 block_size 参数: " << argv[2] << std::endl;
+            return 1;
+        } catch (const std::out_of_range& oor) {
+            std::cerr << "错误: block_size 参数超出范围: " << argv[2] << std::endl;
+            return 1;
+        }
+
+        if (block_size_val <= 0) {
+            std::cerr << "错误: block_size 必须为正数。" << std::endl;
+            return 1;
+        }
+        
+        std::fill(C.begin(), C.end(), 0.0); // 重置 C 矩阵
+        auto start = std::chrono::high_resolution_clock::now();
+
+        if (mode == "block") {
+            method_name_for_csv = "BlockTiling_bs" + std::to_string(block_size_val);
+            matmul_block_tiling(A, B, C, N, M, P, block_size_val);
+        } else if (mode == "block_outer_omp") {
+            method_name_for_csv = "BlockTilingOuterOmp_bs" + std::to_string(block_size_val);
+            matmul_block_tiling_outer_omp(A, B, C, N, M, P, block_size_val);
+        } else if (mode == "block_improved") {
+            method_name_for_csv = "BlockTilingImproved_bs" + std::to_string(block_size_val);
+            matmul_block_tiling_improved(A, B, C, N, M, P, block_size_val);
+        } else { // mode == "block_cache_opt"
+            method_name_for_csv = "BlockTilingCacheOpt_bs" + std::to_string(block_size_val);
+            matmul_block_tiling_cache_opt(A, B, C, N, M, P, block_size_val);
+        }
+        
+        auto end = std::chrono::high_resolution_clock::now();
+        std::chrono::duration<double> diff = end - start;
+        elapsed_seconds = diff.count();
+        std::cout << "[" << method_name_for_csv << "] Time: " << std::fixed << std::setprecision(6) << elapsed_seconds << " s\n";
+        std::cout << "[" << method_name_for_csv << "] Valid: " << validate(C, C_ref, N, P) << std::endl;
+
     } else if (mode == "other") {
-        // auto other_start = std::chrono::high_resolution_clock::now();
+        method_name_for_csv = "OtherLoopOrder";
+        // 重置 C 矩阵为 0
+        std::fill(C.begin(), C.end(), 0.0);
+        auto start = std::chrono::high_resolution_clock::now();
         matmul_other(A, B, C, N, M, P);
-        // auto other_end = std::chrono::high_resolution_clock::now();
-        // std::chrono::duration<double> other_duration = other_end - other_start;
-        // std::cout << "[Other] Time: " << other_duration.count() << " s\n";
+        auto end = std::chrono::high_resolution_clock::now();
+        std::chrono::duration<double> diff = end - start;
+        elapsed_seconds = diff.count();
+        std::cout << "[Other] Time: " << std::fixed << std::setprecision(6) << elapsed_seconds << " s\n";
         std::cout << "[Other] Valid: " << validate(C, C_ref, N, P) << std::endl;
-        // 输出 other_duration.count()
     } else {
-        std::cerr << "Usage: ./main [baseline|openmp|block|mpi|other]" << std::endl; // Added other to usage
+        std::cerr << "用法: ./outputfile [baseline|openmp|block <block_size>|block_outer_omp <block_size>|block_improved <block_size>|block_cache_opt <block_size>|mpi|other]" << std::endl;
+        return 1;
     }
-	// 需额外增加性能评测代码或其他工具进行评测
-    // 例如，将上述计时结果写入一个CSV文件，供 Python 脚本读取
-    // std::ofstream outfile("performance_results.csv");
-    // outfile << "Method,Time\n";
-    // outfile << "Baseline," << baseline_duration.count() << "\n";
-    // if (mode == "openmp") outfile << "OpenMP," << openmp_duration.count() << "\n";
-    // // ... etc. for other modes
-    // outfile.close();
+
+    // 将结果写入 CSV 文件 (非 MPI 模式)
+    std::ofstream outfile("cpu_performance_data.csv", std::ios_base::app);
+    if (outfile.is_open()) {
+        outfile.seekp(0, std::ios_base::end);
+        if (outfile.tellp() == 0) {
+            outfile << "Method,Time\n";
+        }
+        outfile << method_name_for_csv << "," << std::fixed << std::setprecision(6) << elapsed_seconds << "\n";
+        outfile.close();
+    } else {
+        std::cerr << "Unable to open cpu_performance_data.csv for " << method_name_for_csv << " results." << std::endl;
+    }
+    
     return 0;
 }
