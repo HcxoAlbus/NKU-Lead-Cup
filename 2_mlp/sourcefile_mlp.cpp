@@ -7,9 +7,9 @@
 #include <string>
 #include <sstream>
 #include <algorithm>
-#include <iomanip> // For std::fixed and std::setprecision
-#include <numeric> // For std::iota
-#include <random>  // For std::mt19937 and std::shuffle
+#include <iomanip> // 用于 std::fixed 和 std::setprecision
+#include <numeric> // 用于 std::iota
+#include <random>  // 用于 std::mt19937 和 std::shuffle
 
 // 编译文件
 // hipcc sourcefile_mlp.cpp -o mlp_full_dcu
@@ -38,9 +38,9 @@ const std::string BANDWIDTH_FILE_PATH = "starlink_bw.json"; // 数据文件路�
 } while (0)
 
 
-// HIP kernels函数
+// HIP 内核函数
 
-// C(M,K) = A(M,N) * B(N,K)
+// 矩阵乘法: C(M,K) = A(M,N) * B(N,K)
 __global__ void matmul(const double* A, const double* B, double* C, int M, int N, int K) {
     int row = blockIdx.y * blockDim.y + threadIdx.y;
     int col = blockIdx.x * blockDim.x + threadIdx.x;
@@ -54,7 +54,7 @@ __global__ void matmul(const double* A, const double* B, double* C, int M, int N
     }
 }
 
-// output = relu(input)
+// ReLU激活函数正向传播: output = relu(input)
 __global__ void relu_forward(const double* input, double* output, int size) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx < size) {
@@ -62,7 +62,7 @@ __global__ void relu_forward(const double* input, double* output, int size) {
     }
 }
 
-// output = leaky_relu(input, alpha=0.01)
+// Leaky ReLU激活函数正向传播: output = leaky_relu(input, alpha=0.01)
 __global__ void leaky_relu_forward(const double* input, double* output, int size, double alpha = 0.01) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx < size) {
@@ -70,7 +70,7 @@ __global__ void leaky_relu_forward(const double* input, double* output, int size
     }
 }
 
-// output = matrix + bias (bias is row vector, added to each row of matrix)
+// output = matrix + bias (bias是行向量，加到矩阵的每一行)
 __global__ void add_bias_forward(const double* matrix, const double* bias, double* output, int M_rows, int N_cols) {
     int row = blockIdx.y * blockDim.y + threadIdx.y;
     int col = blockIdx.x * blockDim.x + threadIdx.x;
@@ -79,7 +79,7 @@ __global__ void add_bias_forward(const double* matrix, const double* bias, doubl
     }
 }
 
-// squared_errors[i] = (pred[i] - target[i])^2
+// 计算均方误差元素: squared_errors[i] = (pred[i] - target[i])^2
 __global__ void compute_mse_loss_elements(const double* pred, const double* target, double* squared_errors, int size) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx < size) {
@@ -88,16 +88,16 @@ __global__ void compute_mse_loss_elements(const double* pred, const double* targ
     }
 }
 
-// grad_pred = 2/size * (pred - target)
+// 计算输出层梯度: grad_pred = 2/size * (pred - target)
 __global__ void compute_output_grad(const double* pred, const double* target, double* grad, int total_size) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx < total_size) {
-        // total_size here is batch_size * output_dim. For MSE, the gradient is averaged.
+        // 此处的 total_size 是 batch_size * output_dim。对于MSE，梯度是平均的。
         grad[idx] = 2.0 * (pred[idx] - target[idx]) / total_size;
     }
 }
 
-// delta_in = delta_out * (input_to_relu > 0 ? 1 : 0)
+// ReLU激活函数反向传播: delta_in = delta_out * (input_to_relu > 0 ? 1 : 0)
 __global__ void compute_relu_backward(const double* delta_out, const double* input_to_relu, double* delta_in, int size) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx < size) {
@@ -105,7 +105,7 @@ __global__ void compute_relu_backward(const double* delta_out, const double* inp
     }
 }
 
-// delta_in = delta_out * (input_to_leaky_relu > 0 ? 1 : alpha)
+// Leaky ReLU激活函数反向传播: delta_in = delta_out * (input_to_leaky_relu > 0 ? 1 : alpha)
 __global__ void compute_leaky_relu_backward(const double* delta_out, const double* input_to_relu, double* delta_in, int size, double alpha = 0.01) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx < size) {
@@ -113,7 +113,7 @@ __global__ void compute_leaky_relu_backward(const double* delta_out, const doubl
     }
 }
 
-// weights -= lr * grad
+// SGD权重更新: weights -= lr * grad
 __global__ void sgd_update(double* weights, const double* grad, double lr, int size) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx < size) {
@@ -121,17 +121,17 @@ __global__ void sgd_update(double* weights, const double* grad, double lr, int s
     }
 }
 
-// Transpose matrix: output(N,M) from input(M,N)
+// 转置矩阵：output(N,M) 来自 input(M,N)
 __global__ void transpose_matrix(const double* input, double* output, int M_rows, int N_cols) {
-    int row_in = blockIdx.y * blockDim.y + threadIdx.y; // Corresponds to M_rows
-    int col_in = blockIdx.x * blockDim.x + threadIdx.x; // Corresponds to N_cols
+    int row_in = blockIdx.y * blockDim.y + threadIdx.y; // 对应输入矩阵的行数 M_rows
+    int col_in = blockIdx.x * blockDim.x + threadIdx.x; // 对应输入矩阵的列数 N_cols
 
     if (row_in < M_rows && col_in < N_cols) {
         output[col_in * M_rows + row_in] = input[row_in * N_cols + col_in];
     }
 }
 
-// Sum gradients for biases: bias_grad[j] = sum_i(matrix_grad[i*num_neurons + j])
+// 偏置梯度求和：bias_grad[j] = sum_i(matrix_grad[i*num_neurons + j])
 __global__ void sum_bias_gradients(const double* matrix_grad, double* bias_grad, int batch_size, int num_neurons) {
     int neuron_idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (neuron_idx < num_neurons) {
@@ -199,12 +199,12 @@ std::vector<double> load_json_bandwidth(const std::string& filename) {
 
 // 创建数据集
 void create_dataset(const std::vector<double>& data,
-                    std::vector<double>& X, // Flattened: num_samples * INPUT_DIM
-                    std::vector<double>& y, // Flattened: num_samples * OUTPUT_DIM (which is 1)
-                    int window_size) {      // window_size is INPUT_DIM
+                    std::vector<double>& X, // 展平后的数据: 样本数 * INPUT_DIM
+                    std::vector<double>& y, // 展平后的数据: 样本数 * OUTPUT_DIM (此处为1)
+                    int window_size) {      // window_size 即为 INPUT_DIM
     X.clear();
     y.clear();
-    if (data.size() <= static_cast<size_t>(window_size)) { // Ensure data.size() > window_size
+    if (data.size() <= static_cast<size_t>(window_size)) { // 确保数据量 data.size() 大于窗口大小 window_size
         std::cerr << "Data size (" << data.size() << ") too small for window size (" << window_size << ")." << std::endl;
         return;
     }
@@ -232,18 +232,18 @@ void denormalize_data(std::vector<double>& data, double min_val, double max_val)
     for (auto& val : data) {
         val = val * (max_val - min_val) + min_val;
     }
-    // return; // No return needed for void function
+    // void 函数无需返回值
 }
 
-// Helper to initialize weights and biases
+// 初始化权重和偏置的辅助函数
 void initialize_weights_biases(double* arr, int size, bool is_bias = false, int fan_in = 0, int fan_out = 0) {
     unsigned seed = std::chrono::system_clock::now().time_since_epoch().count();
     std::mt19937 gen(seed);
     
     if (is_bias) {
-        for (int i = 0; i < size; ++i) arr[i] = 0.01; // Small constant for biases
+        for (int i = 0; i < size; ++i) arr[i] = 0.01; // 偏置使用较小的常数值初始化
     } else {
-        // Xavier/Glorot initialization for weights (uniform distribution)
+        // 权重使用Xavier/Glorot初始化方法（均匀分布）
         double limit = sqrt(6.0 / (fan_in + fan_out));
         std::uniform_real_distribution<> distrib(-limit, limit);
         for (int i = 0; i < size; ++i) {
@@ -253,20 +253,20 @@ void initialize_weights_biases(double* arr, int size, bool is_bias = false, int 
 }
 
 
-// ----------------------------- Main -------------------------------
+// ----------------------------- 主函数 -------------------------------
 int main() {
     auto total_start_time = std::chrono::high_resolution_clock::now();
 
-    // Step 1: 数据准备阶段
+    // 步骤1：数据准备阶段
     std::cout << "[INFO] Starting Data Preparation..." << std::endl;
     std::vector<double> raw_bandwidth_data = load_json_bandwidth(BANDWIDTH_FILE_PATH);
     
     double min_bw, max_bw;
-    std::vector<double> normalized_bw_data = raw_bandwidth_data; // Copy for normalization
+    std::vector<double> normalized_bw_data = raw_bandwidth_data; // 复制数据用于归一化处理
     normalize_data(normalized_bw_data, min_bw, max_bw);
     std::cout << "[INFO] Data normalized. Min: " << min_bw << ", Max: " << max_bw << std::endl;
 
-    std::vector<double> h_X_all, h_y_all; // Host data
+    std::vector<double> h_X_all, h_y_all; // 主机端数据
     create_dataset(normalized_bw_data, h_X_all, h_y_all, INPUT_DIM);
 
     if (h_y_all.empty()) {
@@ -297,7 +297,7 @@ int main() {
 
     std::cout << "[INFO] Dataset split: Train: " << train_size << ", Val: " << val_size << ", Test: " << test_size << std::endl;
 
-    // Device memory allocation
+    // 设备内存分配
     double *d_X_batch, *d_y_batch;
     double *d_W_ih1, *d_B_h1, *d_W_h1h2, *d_B_h2, *d_W_ho, *d_B_o; // 权重和偏置
     double *d_H1_raw, *d_H1_biased, *d_H1_activated; // 第一个隐藏层
@@ -306,8 +306,8 @@ int main() {
     double *d_grad_O, *d_grad_W_ho, *d_grad_B_o; // 输出层梯度
     double *d_grad_H2_activated, *d_grad_H2_biased, *d_grad_W_h1h2, *d_grad_B_h2; // 第二隐藏层梯度
     double *d_grad_H1_activated, *d_grad_H1_biased, *d_grad_W_ih1, *d_grad_B_h1; // 第一隐藏层梯度
-    double *d_squared_errors; // For MSE calculation
-    double *d_H1_activated_T, *d_H2_activated_T, *d_W_ho_T, *d_W_h1h2_T, *d_X_batch_T; // Transposed matrices
+    double *d_squared_errors; // 用于MSE（均方误差）计算
+    double *d_H1_activated_T, *d_H2_activated_T, *d_W_ho_T, *d_W_h1h2_T, *d_X_batch_T; // 用于反向传播中所需的转置矩阵
 
     HIP_CHECK(hipMalloc(&d_X_batch, BATCH_SIZE * INPUT_DIM * sizeof(double)));
     HIP_CHECK(hipMalloc(&d_y_batch, BATCH_SIZE * OUTPUT_DIM * sizeof(double)));
@@ -342,14 +342,14 @@ int main() {
 
     HIP_CHECK(hipMalloc(&d_squared_errors, BATCH_SIZE * OUTPUT_DIM * sizeof(double)));
 
-    // For transposed matrices needed in backprop
-    HIP_CHECK(hipMalloc(&d_H1_activated_T, HIDDEN_DIM1 * BATCH_SIZE * sizeof(double))); // HIDDEN_DIM x BATCH_SIZE
-    HIP_CHECK(hipMalloc(&d_H2_activated_T, HIDDEN_DIM2 * BATCH_SIZE * sizeof(double)));       // OUTPUT_DIM x HIDDEN_DIM
-    HIP_CHECK(hipMalloc(&d_W_ho_T, OUTPUT_DIM * HIDDEN_DIM2 * sizeof(double)));       // OUTPUT_DIM x HIDDEN_DIM
-    HIP_CHECK(hipMalloc(&d_W_h1h2_T, HIDDEN_DIM2 * HIDDEN_DIM1 * sizeof(double)));   // INPUT_DIM x BATCH_SIZE
-    HIP_CHECK(hipMalloc(&d_X_batch_T, INPUT_DIM * BATCH_SIZE * sizeof(double)));   // INPUT_DIM x BATCH_SIZE
+    // 用于反向传播中所需的转置矩阵
+    HIP_CHECK(hipMalloc(&d_H1_activated_T, HIDDEN_DIM1 * BATCH_SIZE * sizeof(double))); // d_H1_activated_T 的维度: HIDDEN_DIM1 x BATCH_SIZE
+    HIP_CHECK(hipMalloc(&d_H2_activated_T, HIDDEN_DIM2 * BATCH_SIZE * sizeof(double)));       // d_H2_activated_T 的维度: HIDDEN_DIM2 x BATCH_SIZE (注意：这里可能是笔误，应为 HIDDEN_DIM2 * BATCH_SIZE)
+    HIP_CHECK(hipMalloc(&d_W_ho_T, OUTPUT_DIM * HIDDEN_DIM2 * sizeof(double)));       // d_W_ho_T 的维度: OUTPUT_DIM x HIDDEN_DIM2
+    HIP_CHECK(hipMalloc(&d_W_h1h2_T, HIDDEN_DIM2 * HIDDEN_DIM1 * sizeof(double)));   // d_W_h1h2_T 的维度: HIDDEN_DIM2 x HIDDEN_DIM1
+    HIP_CHECK(hipMalloc(&d_X_batch_T, INPUT_DIM * BATCH_SIZE * sizeof(double)));   // d_X_batch_T 的维度: INPUT_DIM x BATCH_SIZE
 
-    // Initialize weights and biases on host
+    // 在主机端初始化权重和偏置
     std::vector<double> h_W_ih1(INPUT_DIM * HIDDEN_DIM1);
     std::vector<double> h_B_h1(HIDDEN_DIM1);
     std::vector<double> h_W_h1h2(HIDDEN_DIM1 * HIDDEN_DIM2);
@@ -364,7 +364,7 @@ int main() {
     initialize_weights_biases(h_W_ho.data(), h_W_ho.size(), false, HIDDEN_DIM2, OUTPUT_DIM);
     initialize_weights_biases(h_B_o.data(), h_B_o.size(), true);
 
-    // Copy initial weights and biases to device
+    // 将初始权重和偏置复制到设备端
     HIP_CHECK(hipMemcpy(d_W_ih1, h_W_ih1.data(), h_W_ih1.size() * sizeof(double), hipMemcpyHostToDevice));
     HIP_CHECK(hipMemcpy(d_B_h1, h_B_h1.data(), h_B_h1.size() * sizeof(double), hipMemcpyHostToDevice));
     HIP_CHECK(hipMemcpy(d_W_h1h2, h_W_h1h2.data(), h_W_h1h2.size() * sizeof(double), hipMemcpyHostToDevice));
@@ -376,8 +376,8 @@ int main() {
     std::cout << "[INFO] Network architecture: " << INPUT_DIM << " -> " << HIDDEN_DIM1 << " -> " << HIDDEN_DIM2 << " -> " << OUTPUT_DIM << std::endl;
     std::cout << "[INFO] Starting Training..." << std::endl;
     
-    dim3 threadsPerBlock(16, 16); // For 2D kernels like matmul
-    dim3 threadsPerBlock1D(256);  // For 1D kernels
+    dim3 threadsPerBlock(16, 16); // 用于类似 matmul 的二维内核函数
+    dim3 threadsPerBlock1D(256);  // 用于一维内核函数
 
     // 早停机制变量
     double best_val_loss = std::numeric_limits<double>::max();
@@ -386,7 +386,7 @@ int main() {
 
     auto training_start_time = std::chrono::high_resolution_clock::now();
 
-	// 训练MLP网络，包括前向传播、反向传播、梯度下降、参数更新等
+    // 训练MLP网络，包括前向传播、反向传播、梯度下降、参数更新等
     for (int epoch = 0; epoch < EPOCHS; ++epoch) {
         double current_lr = compute_learning_rate(epoch, LEARNING_RATE);
         double total_epoch_loss = 0.0;
@@ -399,7 +399,7 @@ int main() {
 
         for (size_t i = 0; i < train_size / BATCH_SIZE; ++i) {
             size_t batch_start_idx = i * BATCH_SIZE;
-            // Prepare batch data - consider using shuffled indices
+            // 准备批处理数据 - 考虑使用打乱顺序后的索引
             std::vector<double> current_X_batch(BATCH_SIZE * INPUT_DIM);
             std::vector<double> current_y_batch(BATCH_SIZE * OUTPUT_DIM);
 
@@ -416,8 +416,8 @@ int main() {
             HIP_CHECK(hipMemcpy(d_X_batch, current_X_batch.data(), BATCH_SIZE * INPUT_DIM * sizeof(double), hipMemcpyHostToDevice));
             HIP_CHECK(hipMemcpy(d_y_batch, current_y_batch.data(), BATCH_SIZE * OUTPUT_DIM * sizeof(double), hipMemcpyHostToDevice));
 
-            // Step 2: Forward Propagation
-            // Layer 1 (Input -> Hidden)
+            // 步骤2：前向传播
+            // 第1层 (输入层 -> 隐藏层1)
             dim3 matmul_blocks_ih1((HIDDEN_DIM1 + threadsPerBlock.x - 1) / threadsPerBlock.x, (BATCH_SIZE + threadsPerBlock.y - 1) / threadsPerBlock.y);
             hipLaunchKernelGGL(matmul, matmul_blocks_ih1, threadsPerBlock, 0, 0, d_X_batch, d_W_ih1, d_H1_raw, BATCH_SIZE, INPUT_DIM, HIDDEN_DIM1);
             hipLaunchKernelGGL(add_bias_forward, matmul_blocks_ih1, threadsPerBlock, 0, 0, d_H1_raw, d_B_h1, d_H1_biased, BATCH_SIZE, HIDDEN_DIM1);
@@ -425,7 +425,7 @@ int main() {
             dim3 blocks1D_hidden1((BATCH_SIZE * HIDDEN_DIM1 + threadsPerBlock1D.x - 1) / threadsPerBlock1D.x);
             hipLaunchKernelGGL(leaky_relu_forward, blocks1D_hidden1, threadsPerBlock1D, 0, 0, d_H1_biased, d_H1_activated, BATCH_SIZE * HIDDEN_DIM1);
 
-            // Layer 2 (Hidden1 -> Hidden2)
+            // 第2层 (隐藏层1 -> 隐藏层2)
             dim3 matmul_blocks_h1h2((HIDDEN_DIM2 + threadsPerBlock.x - 1) / threadsPerBlock.x, (BATCH_SIZE + threadsPerBlock.y - 1) / threadsPerBlock.y);
             hipLaunchKernelGGL(matmul, matmul_blocks_h1h2, threadsPerBlock, 0, 0, d_H1_activated, d_W_h1h2, d_H2_raw, BATCH_SIZE, HIDDEN_DIM1, HIDDEN_DIM2);
             hipLaunchKernelGGL(add_bias_forward, matmul_blocks_h1h2, threadsPerBlock, 0, 0, d_H2_raw, d_B_h2, d_H2_biased, BATCH_SIZE, HIDDEN_DIM2);
@@ -433,12 +433,12 @@ int main() {
             dim3 blocks1D_hidden2((BATCH_SIZE * HIDDEN_DIM2 + threadsPerBlock1D.x - 1) / threadsPerBlock1D.x);
             hipLaunchKernelGGL(leaky_relu_forward, blocks1D_hidden2, threadsPerBlock1D, 0, 0, d_H2_biased, d_H2_activated, BATCH_SIZE * HIDDEN_DIM2);
 
-            // Layer 3 (Hidden2 -> Output)
+            // 第3层 (隐藏层2 -> 输出层)
             dim3 matmul_blocks_ho((OUTPUT_DIM + threadsPerBlock.x - 1) / threadsPerBlock.x, (BATCH_SIZE + threadsPerBlock.y - 1) / threadsPerBlock.y);
             hipLaunchKernelGGL(matmul, matmul_blocks_ho, threadsPerBlock, 0, 0, d_H2_activated, d_W_ho, d_O_raw, BATCH_SIZE, HIDDEN_DIM2, OUTPUT_DIM);
             hipLaunchKernelGGL(add_bias_forward, matmul_blocks_ho, threadsPerBlock, 0, 0, d_O_raw, d_B_o, d_O_pred, BATCH_SIZE, OUTPUT_DIM);
             
-            // Step 3: Error Calculation
+            // 步骤3：误差计算
             dim3 blocks1D_output((BATCH_SIZE * OUTPUT_DIM + threadsPerBlock1D.x - 1) / threadsPerBlock1D.x);
             hipLaunchKernelGGL(compute_mse_loss_elements, blocks1D_output, threadsPerBlock1D, 0, 0, d_O_pred, d_y_batch, d_squared_errors, BATCH_SIZE * OUTPUT_DIM);
             
@@ -446,15 +446,15 @@ int main() {
             HIP_CHECK(hipMemcpy(h_squared_errors.data(), d_squared_errors, BATCH_SIZE * OUTPUT_DIM * sizeof(double), hipMemcpyDeviceToHost));
             double batch_loss = 0.0;
             for(double sq_err : h_squared_errors) batch_loss += sq_err;
-            batch_loss /= (BATCH_SIZE * OUTPUT_DIM); // Average MSE for the batch
+            batch_loss /= (BATCH_SIZE * OUTPUT_DIM); // 当前批次的平均均方误差 (MSE)
             total_epoch_loss += batch_loss;
 
-            // Step 4: Backward Propagation
-            // Output layer gradients
+            // 步骤4：反向传播
+            // 输出层梯度
             hipLaunchKernelGGL(compute_output_grad, blocks1D_output, threadsPerBlock1D, 0, 0, d_O_pred, d_y_batch, d_grad_O, BATCH_SIZE * OUTPUT_DIM);
 
-            // Transpose d_H1_activated for d_grad_W_ho calculation
-            dim3 transpose_blocks_H1((BATCH_SIZE + threadsPerBlock.x -1) / threadsPerBlock.x, (HIDDEN_DIM1 + threadsPerBlock.y -1)/ threadsPerBlock.y); // M=BS, N=HD
+            // 转置 d_H1_activated 用于计算 d_grad_W_ho
+            dim3 transpose_blocks_H1((BATCH_SIZE + threadsPerBlock.x -1) / threadsPerBlock.x, (HIDDEN_DIM1 + threadsPerBlock.y -1)/ threadsPerBlock.y); // M (输入矩阵行数) = BATCH_SIZE, N (输入矩阵列数) = HIDDEN_DIM1
             hipLaunchKernelGGL(transpose_matrix, transpose_blocks_H1, threadsPerBlock, 0, 0, d_H1_activated, d_H1_activated_T, BATCH_SIZE, HIDDEN_DIM1);
             
             dim3 matmul_blocks_grad_Who((OUTPUT_DIM + threadsPerBlock.x -1)/threadsPerBlock.x, (HIDDEN_DIM1 + threadsPerBlock.y-1)/threadsPerBlock.y);
@@ -464,8 +464,8 @@ int main() {
             hipLaunchKernelGGL(sum_bias_gradients, blocks1D_bias_O, threadsPerBlock1D, 0, 0, d_grad_O, d_grad_B_o, BATCH_SIZE, OUTPUT_DIM);
 
             // 第二隐藏层梯度
-            // Transpose d_W_ho for d_grad_H2_activated calculation
-            dim3 transpose_blocks_Who((HIDDEN_DIM2 + threadsPerBlock.x -1)/threadsPerBlock.x, (OUTPUT_DIM + threadsPerBlock.y -1)/threadsPerBlock.y); // M=HD, N=OD
+            // 转置 d_W_ho 用于计算 d_grad_H2_activated
+            dim3 transpose_blocks_Who((HIDDEN_DIM2 + threadsPerBlock.x -1)/threadsPerBlock.x, (OUTPUT_DIM + threadsPerBlock.y -1)/threadsPerBlock.y); // M (输入矩阵行数) = HIDDEN_DIM2, N (输入矩阵列数) = OUTPUT_DIM
             hipLaunchKernelGGL(transpose_matrix, transpose_blocks_Who, threadsPerBlock, 0, 0, d_W_ho, d_W_ho_T, HIDDEN_DIM2, OUTPUT_DIM);
 
             dim3 matmul_blocks_grad_H2act((HIDDEN_DIM2 + threadsPerBlock.x -1)/threadsPerBlock.x, (BATCH_SIZE + threadsPerBlock.y -1)/threadsPerBlock.y);
@@ -474,8 +474,8 @@ int main() {
             hipLaunchKernelGGL(compute_leaky_relu_backward, blocks1D_hidden2, threadsPerBlock1D, 0, 0, d_grad_H2_activated, d_H2_biased, d_grad_H2_biased, BATCH_SIZE * HIDDEN_DIM2);
 
             // 第二隐藏层权重梯度
-            dim3 transpose_blocks_H1h2((HIDDEN_DIM2 + threadsPerBlock.x -1)/threadsPerBlock.x, (HIDDEN_DIM1 + threadsPerBlock.y -1)/threadsPerBlock.y); // M=HD, N=OD
-            hipLaunchKernelGGL(transpose_matrix, transpose_blocks_H1h2, threadsPerBlock, 0, 0, d_W_h1h2, d_W_h1h2_T, HIDDEN_DIM2, HIDDEN_DIM1);
+            dim3 transpose_blocks_H1h2((HIDDEN_DIM2 + threadsPerBlock.x -1)/threadsPerBlock.x, (HIDDEN_DIM1 + threadsPerBlock.y -1)/threadsPerBlock.y); // M (输入矩阵行数) = HIDDEN_DIM1, N (输入矩阵列数) = HIDDEN_DIM2
+            hipLaunchKernelGGL(transpose_matrix, transpose_blocks_H1h2, threadsPerBlock, 0, 0, d_W_h1h2, d_W_h1h2_T, HIDDEN_DIM1, HIDDEN_DIM2);
 
             dim3 matmul_blocks_grad_Wh1h2((HIDDEN_DIM2 + threadsPerBlock.x -1)/threadsPerBlock.x, (HIDDEN_DIM1 + threadsPerBlock.y -1)/threadsPerBlock.y);
             hipLaunchKernelGGL(matmul, matmul_blocks_grad_Wh1h2, threadsPerBlock, 0, 0, d_H1_activated_T, d_grad_H2_biased, d_grad_W_h1h2, HIDDEN_DIM1, BATCH_SIZE, HIDDEN_DIM2);
@@ -484,7 +484,7 @@ int main() {
             hipLaunchKernelGGL(sum_bias_gradients, blocks1D_bias_H2, threadsPerBlock1D, 0, 0, d_grad_H2_biased, d_grad_B_h2, BATCH_SIZE, HIDDEN_DIM2);
 
             // 第一隐藏层梯度
-            dim3 transpose_blocks_Wh1h2((HIDDEN_DIM1 + threadsPerBlock.x -1)/threadsPerBlock.x, (HIDDEN_DIM2 + threadsPerBlock.y -1)/threadsPerBlock.y); // M=HD, N=OD
+            dim3 transpose_blocks_Wh1h2((HIDDEN_DIM1 + threadsPerBlock.x -1)/threadsPerBlock.x, (HIDDEN_DIM2 + threadsPerBlock.y -1)/threadsPerBlock.y); // M (输入矩阵行数) = HIDDEN_DIM1, N (输入矩阵列数) = HIDDEN_DIM2
             hipLaunchKernelGGL(transpose_matrix, transpose_blocks_Wh1h2, threadsPerBlock, 0, 0, d_W_h1h2, d_W_h1h2_T, HIDDEN_DIM1, HIDDEN_DIM2);
 
             dim3 matmul_blocks_grad_H1act((HIDDEN_DIM1 + threadsPerBlock.x -1)/threadsPerBlock.x, (BATCH_SIZE + threadsPerBlock.y -1)/threadsPerBlock.y);
@@ -493,7 +493,7 @@ int main() {
             hipLaunchKernelGGL(compute_leaky_relu_backward, blocks1D_hidden1, threadsPerBlock1D, 0, 0, d_grad_H1_activated, d_H1_biased, d_grad_H1_biased, BATCH_SIZE * HIDDEN_DIM1);
 
             // 第一隐藏层权重梯度
-            dim3 transpose_blocks_X((BATCH_SIZE + threadsPerBlock.x -1)/threadsPerBlock.x, (INPUT_DIM + threadsPerBlock.y -1)/threadsPerBlock.y); // M=BS, N=ID
+            dim3 transpose_blocks_X((BATCH_SIZE + threadsPerBlock.x -1)/threadsPerBlock.x, (INPUT_DIM + threadsPerBlock.y -1)/threadsPerBlock.y); // M (输入矩阵行数) = BATCH_SIZE, N (输入矩阵列数) = INPUT_DIM
             hipLaunchKernelGGL(transpose_matrix, transpose_blocks_X, threadsPerBlock, 0, 0, d_X_batch, d_X_batch_T, BATCH_SIZE, INPUT_DIM);
 
             dim3 matmul_blocks_grad_Wih1((HIDDEN_DIM1 + threadsPerBlock.x -1)/threadsPerBlock.x, (INPUT_DIM + threadsPerBlock.y -1)/threadsPerBlock.y);
@@ -502,7 +502,7 @@ int main() {
             dim3 blocks1D_bias_H1((HIDDEN_DIM1 + threadsPerBlock1D.x -1)/threadsPerBlock1D.x);
             hipLaunchKernelGGL(sum_bias_gradients, blocks1D_bias_H1, threadsPerBlock1D, 0, 0, d_grad_H1_biased, d_grad_B_h1, BATCH_SIZE, HIDDEN_DIM1);
 
-            // Step 5: Parameter Update (SGD)
+            // 步骤5：参数更新 (SGD)
             hipLaunchKernelGGL(sgd_update, dim3((INPUT_DIM * HIDDEN_DIM1 + threadsPerBlock1D.x - 1) / threadsPerBlock1D.x), threadsPerBlock1D, 0, 0, d_W_ih1, d_grad_W_ih1, current_lr, INPUT_DIM * HIDDEN_DIM1);
             hipLaunchKernelGGL(sgd_update, blocks1D_bias_H1, threadsPerBlock1D, 0, 0, d_B_h1, d_grad_B_h1, current_lr, HIDDEN_DIM1);
             hipLaunchKernelGGL(sgd_update, dim3((HIDDEN_DIM1 * HIDDEN_DIM2 + threadsPerBlock1D.x - 1) / threadsPerBlock1D.x), threadsPerBlock1D, 0, 0, d_W_h1h2, d_grad_W_h1h2, current_lr, HIDDEN_DIM1 * HIDDEN_DIM2);
@@ -640,11 +640,11 @@ int main() {
     std::cout << "[INFO] Inference throughput: " << std::fixed << std::setprecision(2) << inference_throughput << " samples/sec." << std::endl;
     std::cout << "[INFO] Mean Squared Error (MSE) on (normalized) Test Set: " << std::fixed << std::setprecision(8) << total_mse_test << std::endl;
 
-    // Denormalize predictions and actual test values for comparison
+    // 对预测值和真实测试值进行反归一化以便进行比较
     std::vector<double> h_predictions_denormalized = h_predictions_normalized;
     denormalize_data(h_predictions_denormalized, min_bw, max_bw);
     
-    std::vector<double> h_y_test_denormalized = h_y_test; // Copy before denormalizing
+    std::vector<double> h_y_test_denormalized = h_y_test; // 在反归一化之前复制数据
     denormalize_data(h_y_test_denormalized, min_bw, max_bw);
 
     std::cout << "[INFO] Sample Predictions (denormalized):" << std::endl;
@@ -653,7 +653,7 @@ int main() {
                   << ", Actual: " << h_y_test_denormalized[i] << std::endl;
     }
     
-    // Calculate MSE on denormalized data for a more interpretable error
+    // 在反归一化后的数据上计算MSE，以获得更直观的误差结果
     double total_mse_denormalized = 0.0;
     for(size_t i=0; i < test_size; ++i) {
         double diff = h_predictions_denormalized[i] - h_y_test_denormalized[i];
@@ -663,7 +663,7 @@ int main() {
     std::cout << "[INFO] Mean Squared Error (MSE) on (denormalized) Test Set: " << std::fixed << std::setprecision(2) << total_mse_denormalized << std::endl;
 
 
-    // Cleanup
+    // 清理资源
     std::cout << "[INFO] Cleaning up device memory..." << std::endl;
     HIP_CHECK(hipFree(d_X_batch)); HIP_CHECK(hipFree(d_y_batch));
     HIP_CHECK(hipFree(d_W_ih1)); HIP_CHECK(hipFree(d_B_h1));
@@ -688,3 +688,4 @@ int main() {
     
     return 0;
 }
+

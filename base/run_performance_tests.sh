@@ -1,5 +1,4 @@
 #!/bin/bash
-# filepath: d:\sec_semester_code\CPP\Lead_cup\base\run_performance_tests.sh
 
 # --- 配置 ---
 CPU_SRC="sourcefile.cpp"
@@ -10,13 +9,14 @@ DCU_EXE="outputfile_dcu"
 CPU_PERF_CSV="cpu_performance_data.csv"
 DCU_PERF_CSV="dcu_performance_data.csv"
 PYTHON_VISUALIZER="visualize_performance.py"
+ROCM_SMI_DCU_LOG="rocm_smi_dcu_log.csv" # 新增 rocm-smi 日志文件名
 
 # ROCPROF 输出目录
 ROCPROF_CPU_DIR="rocprof_cpu_out"
 ROCPROF_DCU_DIR="rocprof_dcu_out"
 
 # MPI 进程数测试列表
-MPI_PROCESSES=(1 2 4) # 您可以根据需要修改，例如 (1 2 4 8)
+MPI_PROCESSES=(1 2 4)
 
 # --- 辅助函数 ---
 execute_and_log() {
@@ -41,9 +41,11 @@ echo "当前工作目录: $(pwd)"
 # 1. 清理旧的性能数据文件和 rocprof 输出
 echo "\n--- 清理旧数据 ---"
 rm -f "$CPU_PERF_CSV" "$DCU_PERF_CSV"
+rm -f "$ROCM_SMI_DCU_LOG" # 清理旧的 rocm-smi 日志
 rm -rf "$ROCPROF_CPU_DIR" "$ROCPROF_DCU_DIR"
 mkdir -p "$ROCPROF_CPU_DIR" "$ROCPROF_DCU_DIR"
 echo "旧的 CSV 数据文件已删除。"
+echo "旧的 rocm-smi 日志文件已删除。"
 echo "旧的 rocprof 输出目录已删除并重新创建。"
 
 # 2. 编译源文件
@@ -93,7 +95,7 @@ done
 
 execute_and_log "./$CPU_EXE" other
 
-# 使用 rocprof 对 OpenMP 版本进行分析 (示例)
+
 # rocprof 主要用于 GPU 分析，但也可以用于 CPU 上的 HSA/ROCr 调用（如果适用）
 # 对于纯 CPU OpenMP，其提供的 CPU 指标可能不如 'perf' 等工具详细
 # 这里我们主要依赖 C++ 内的计时，但 rocprof 可以提供一些系统级信息
@@ -117,7 +119,30 @@ done
 # 5. 运行 DCU/HIP 基准测试
 echo "\n--- 运行 DCU/HIP 基准测试 ---"
 echo "运行 DCU/HIP 程序 (内部计时将写入 $DCU_PERF_CSV)..."
+
+ROCM_SMI_PID=""
+if command -v rocm-smi &> /dev/null; then
+    echo "启动 rocm-smi 后台监控 (日志将保存到 $ROCM_SMI_DCU_LOG)..."
+    # 使用 rocm-smi 记录详细的 GPU 指标，每秒一次，输出为 CSV 格式
+    rocm-smi -l 1000 --csv --alldevices --showbus --showclocks --showfan --showmeminfo all --showpids --showpower --showtemp --showuse --showvoltage > "$ROCM_SMI_DCU_LOG" &
+    ROCM_SMI_PID=$!
+else
+    echo "警告: rocm-smi 命令未找到。跳过 rocm-smi 监控。"
+fi
+
 execute_and_log "./$DCU_EXE"
+
+if [ -n "$ROCM_SMI_PID" ]; then
+    echo "停止 rocm-smi 后台监控 (PID: $ROCM_SMI_PID)..."
+    kill $ROCM_SMI_PID
+    wait $ROCM_SMI_PID 2>/dev/null # 等待 rocm-smi 进程终止
+    echo "rocm-smi 监控数据已保存到: $ROCM_SMI_DCU_LOG"
+else
+    if command -v rocm-smi &> /dev/null; then
+        echo "rocm-smi 监控未成功启动或已被停止。"
+    fi
+fi
+
 
 echo "\n使用 rocprof 分析 DCU/HIP 程序..."
 # --hip-trace 用于跟踪 HIP API 调用
@@ -150,5 +175,6 @@ fi
 echo "\n===== 性能测试完成 ====="
 echo "CPU 性能数据: $CPU_PERF_CSV"
 echo "DCU/HIP 性能数据: $DCU_PERF_CSV"
+echo "rocm-smi DCU/HIP 监控日志: $ROCM_SMI_DCU_LOG" # 新增 rocm-smi 日志路径总结
 echo "rocprof CPU 输出目录: $ROCPROF_CPU_DIR"
 echo "rocprof DCU/HIP 输出目录: $ROCPROF_DCU_DIR"

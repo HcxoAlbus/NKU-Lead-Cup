@@ -5,26 +5,26 @@ import os
 import re
 
 def plot_cpu_performance(cpu_csv_file, output_dir):
-    """Plots CPU matrix multiplication performance."""
+    """绘制CPU矩阵乘法性能图表。"""
     if not os.path.exists(cpu_csv_file):
-        print(f"Warning: CPU performance file not found: {cpu_csv_file}")
+        print(f"警告：未找到CPU性能文件：{cpu_csv_file}")
         return
     try:
         df_cpu = pd.read_csv(cpu_csv_file)
         if df_cpu.empty:
-            print(f"Warning: CPU performance file is empty: {cpu_csv_file}")
+            print(f"警告：CPU性能文件为空：{cpu_csv_file}")
             return
 
-        # Ensure 'Time' is numeric, convert if necessary
+        # 确保'Time'为数值型，必要时进行转换
         df_cpu['Time'] = pd.to_numeric(df_cpu['Time'], errors='coerce')
         df_cpu.dropna(subset=['Time'], inplace=True)
 
 
         plt.figure(figsize=(12, 7))
         bars = plt.bar(df_cpu['Method'], df_cpu['Time'], color=['skyblue', 'lightgreen', 'salmon', 'gold', 'lightcoral', 'cyan'])
-        plt.xlabel("CPU Method")
-        plt.ylabel("Time (seconds)")
-        plt.title("CPU Matrix Multiplication Performance")
+        plt.xlabel("CPU方法")
+        plt.ylabel("时间（秒）")
+        plt.title("CPU矩阵乘法性能")
         plt.xticks(rotation=45, ha="right")
         plt.tight_layout()
         
@@ -35,38 +35,38 @@ def plot_cpu_performance(cpu_csv_file, output_dir):
         plot_filename = os.path.join(output_dir, "cpu_performance_comparison.png")
         plt.savefig(plot_filename)
         plt.close()
-        print(f"CPU performance plot saved to {plot_filename}")
+        print(f"CPU性能图表已保存到 {plot_filename}")
     except Exception as e:
-        print(f"Error plotting CPU performance: {e}")
+        print(f"绘制CPU性能图表时出错：{e}")
 
 def plot_dcu_matmul_performance(dcu_csv_file, output_dir):
-    """Plots DCU matrix multiplication performance against its CPU baseline."""
+    """绘制DCU矩阵乘法性能与其CPU基准对比图。"""
     if not os.path.exists(dcu_csv_file):
-        print(f"Warning: DCU performance file not found: {dcu_csv_file}")
+        print(f"警告：未找到DCU性能文件：{dcu_csv_file}")
         return
     try:
         df_dcu = pd.read_csv(dcu_csv_file)
         if df_dcu.empty:
-            print(f"Warning: DCU performance file is empty: {dcu_csv_file}")
+            print(f"警告：DCU性能文件为空：{dcu_csv_file}")
             return
         
         df_dcu['Time'] = pd.to_numeric(df_dcu['Time'], errors='coerce')
         df_dcu.dropna(subset=['Time'], inplace=True)
 
-        # Filter for relevant methods for a clear comparison
-        # Example: Compare CPU_Baseline_for_DCU_comparison, HIP_Kernel, HIP_Total_Incl_Memcpy
+        # 筛选相关方法以进行明确比较
+        # 例如：比较CPU_Baseline_for_DCU_comparison, HIP_Kernel, HIP_Total_Incl_Memcpy
         methods_to_plot = ['CPU_Baseline_for_DCU_comparison', 'HIP_Kernel', 'HIP_Total_Incl_Memcpy']
         df_dcu_filtered = df_dcu[df_dcu['Method'].isin(methods_to_plot)]
         
         if df_dcu_filtered.empty:
-            print(f"Warning: No relevant methods found in DCU performance file for plotting: {dcu_csv_file}")
+            print(f"警告：在DCU性能文件中未找到用于绘图的相关方法：{dcu_csv_file}")
             return
 
         plt.figure(figsize=(10, 6))
         bars = plt.bar(df_dcu_filtered['Method'], df_dcu_filtered['Time'], color=['blue', 'red', 'orange'])
-        plt.xlabel("Method (DCU Matmul vs CPU)")
-        plt.ylabel("Time (seconds)")
-        plt.title("DCU Matrix Multiplication Performance (N=1024, M=2048, P=512)")
+        plt.xlabel("方法（DCU矩阵乘法与CPU对比）")
+        plt.ylabel("时间（秒）")
+        plt.title("DCU矩阵乘法性能（N=1024, M=2048, P=512）")
         plt.xticks(rotation=25, ha="right")
         plt.tight_layout()
 
@@ -77,12 +77,12 @@ def plot_dcu_matmul_performance(dcu_csv_file, output_dir):
         plot_filename = os.path.join(output_dir, "dcu_matmul_performance_comparison.png")
         plt.savefig(plot_filename)
         plt.close()
-        print(f"DCU matmul performance plot saved to {plot_filename}")
+        print(f"DCU矩阵乘法性能图表已保存到 {plot_filename}")
     except Exception as e:
-        print(f"Error plotting DCU matmul performance: {e}")
+        print(f"绘制DCU矩阵乘法性能图表时出错：{e}")
 
 def parse_mlp_gpu_times(content, custom_kernel_header, hipblas_header):
-    """Parses MLP GPU times for a specific section (custom or hipBLAS)."""
+    """解析特定部分（自定义或hipBLAS）的MLP GPU时间。"""
     data = {
         "total_time_s": None, "layer1_time_s": None, "layer2_time_s": None,
         "l1_matmul_s": None, "l1_bias_relu_s": None, 
@@ -90,7 +90,7 @@ def parse_mlp_gpu_times(content, custom_kernel_header, hipblas_header):
         "overhead_s": None, "valid": False
     }
     
-    # Find the relevant block of text
+    # 查找相关的文本块
     if custom_kernel_header in content:
         block_match = re.search(f"{re.escape(custom_kernel_header)}(.*?)(?=\n===|\Z)", content, re.DOTALL)
         if not block_match: return data
@@ -126,31 +126,31 @@ def parse_mlp_gpu_times(content, custom_kernel_header, hipblas_header):
 
         if total_match and l1_combined_match and l2_combined_match:
             data["total_time_s"] = float(total_match.group(1)) / 1000.0
-            data["layer1_time_s"] = float(l1_combined_match.group(1)) / 1000.0 # Combined L1
-            data["layer2_time_s"] = float(l2_combined_match.group(1)) / 1000.0 # Combined L2
+            data["layer1_time_s"] = float(l1_combined_match.group(1)) / 1000.0 # 组合的L1
+            data["layer2_time_s"] = float(l2_combined_match.group(1)) / 1000.0 # 组合的L2
             if l1_matmul_match: data["l1_matmul_s"] = float(l1_matmul_match.group(1)) / 1000.0
             if l1_bias_relu_match: data["l1_bias_relu_s"] = float(l1_bias_relu_match.group(1)) / 1000.0
             if l2_matmul_match: data["l2_matmul_s"] = float(l2_matmul_match.group(1)) / 1000.0
             if l2_bias_match: data["l2_bias_s"] = float(l2_bias_match.group(1)) / 1000.0
             if overhead_match: data["overhead_s"] = float(overhead_match.group(1)) / 1000.0
             data["valid"] = True
-    else: # Fallback for old single value format
+    else: # 旧的单值格式的后备方案
         try:
             data["total_time_s"] = float(content.strip()) / 1000.0
-            data["valid"] = True # Mark as valid but with limited info
+            data["valid"] = True # 标记为有效但信息有限
         except ValueError:
-            pass # Not a simple float
+            pass # 不是简单的浮点数
             
     return data
 
 
 def plot_mlp_gpu_vs_cpu_baseline(mlp_gpu_time_file, cpu_csv_file, output_dir):
-    """Plots MLP GPU time (both custom and hipBLAS paths) against a relevant CPU baseline with detailed breakdown."""
+    """绘制MLP GPU时间（自定义和hipBLAS路径）与相关CPU基准对比的详细分析图。"""
     if not os.path.exists(mlp_gpu_time_file):
-        print(f"Warning: MLP GPU time file not found: {mlp_gpu_time_file}")
+        print(f"警告：未找到MLP GPU时间文件：{mlp_gpu_time_file}")
         return
     if not os.path.exists(cpu_csv_file):
-        print(f"Warning: CPU performance file not found for MLP comparison: {cpu_csv_file}")
+        print(f"警告：用于MLP比较的CPU性能文件未找到：{cpu_csv_file}")
         return
 
     try:
@@ -164,24 +164,24 @@ def plot_mlp_gpu_vs_cpu_baseline(mlp_gpu_time_file, cpu_csv_file, output_dir):
         hipblas_data = parse_mlp_gpu_times(content, None, hipblas_header)
 
         if not custom_data["valid"] and not hipblas_data["valid"]:
-             # Try parsing as old format if specific headers not found
+             # 如果没有找到特定的头部，尝试解析为旧格式
             old_format_data = parse_mlp_gpu_times(content, None, None)
             if old_format_data["valid"]:
-                custom_data = old_format_data # Assign to custom for plotting
-                print("Warning: Parsed MLP GPU time in old single-value format. Detailed breakdown might be limited.")
+                custom_data = old_format_data # 分配给custom用于绘图
+                print("警告：以旧的单值格式解析MLP GPU时间。详细分析可能有限。")
             else:
-                print(f"Error: Could not parse MLP GPU times from {mlp_gpu_time_file}. Ensure the format is correct.")
+                print(f"错误：无法从{mlp_gpu_time_file}解析MLP GPU时间。请确保格式正确。")
                 return
         
         df_cpu = pd.read_csv(cpu_csv_file)
         cpu_baseline_time_series = df_cpu[df_cpu['Method'] == 'Baseline']['Time']
         if cpu_baseline_time_series.empty:
-            print("Warning: 'Baseline' method not found in CPU performance data for MLP comparison.")
+            print("警告：在CPU性能数据中未找到用于MLP比较的'Baseline'方法。")
             cpu_baseline_time_s = None
         else:
             cpu_baseline_time_s = pd.to_numeric(cpu_baseline_time_series.iloc[0], errors='coerce')
             if pd.isna(cpu_baseline_time_s):
-                 print("Warning: 'Baseline' CPU time is not a valid number.")
+                 print("警告：'Baseline' CPU时间不是有效的数字。")
                  cpu_baseline_time_s = None
 
         fig_height = 7
@@ -189,16 +189,16 @@ def plot_mlp_gpu_vs_cpu_baseline(mlp_gpu_time_file, cpu_csv_file, output_dir):
         if custom_data["valid"] and custom_data["layer1_time_s"] is not None:
             num_subplots +=1
         if hipblas_data["valid"] and hipblas_data["layer1_time_s"] is not None:
-            if not (custom_data["valid"] and custom_data["layer1_time_s"] is not None) : # only add if not already added
+            if not (custom_data["valid"] and custom_data["layer1_time_s"] is not None) : # 仅在尚未添加时添加
                  num_subplots +=1
             elif custom_data["valid"] and custom_data["layer1_time_s"] is not None and hipblas_data["valid"] and hipblas_data["layer1_time_s"] is not None:
-                 num_subplots = 3 # main, custom_breakdown, hipblas_breakdown
+                 num_subplots = 3 # 主图、自定义分解图、hipblas分解图
 
 
         fig, axes = plt.subplots(1, num_subplots, figsize=(6 * num_subplots, fig_height), squeeze=False)
         ax_idx = 0
         
-        # Subplot 1: Overall Comparison
+        # 子图1：总体比较
         ax1 = axes[0, ax_idx]
         ax_idx +=1
         methods = []
@@ -220,50 +220,50 @@ def plot_mlp_gpu_vs_cpu_baseline(mlp_gpu_time_file, cpu_csv_file, output_dir):
             times.append(hipblas_data["total_time_s"])
             colors.append('purple')
         
-        if not methods: # If no data to plot
-            ax1.text(0.5, 0.5, 'No MLP GPU data found', ha='center', va='center', transform=ax1.transAxes)
+        if not methods: # 如果没有数据可绘制
+            ax1.text(0.5, 0.5, '未找到MLP GPU数据', ha='center', va='center', transform=ax1.transAxes)
         else:
             bars1 = ax1.bar(methods, times, color=colors)
-            ax1.set_ylabel("Time (seconds)")
-            ax1.set_title("MLP GPU vs CPU Baseline")
+            ax1.set_ylabel("时间（秒）")
+            ax1.set_title("MLP GPU与CPU基准对比")
             ax1.tick_params(axis='x', rotation=20, ha="right")
             for bar in bars1:
                 yval = bar.get_height()
                 ax1.text(bar.get_x() + bar.get_width()/2.0, yval + 0.01 * (max(times) if times else 0.001), 
                         f'{yval:.6f}', ha='center', va='bottom', fontsize=9)
 
-        # Subplot 2: Custom Kernels GPU Layer Breakdown
+        # 子图2：自定义内核GPU层分解
         if custom_data["valid"] and custom_data["layer1_time_s"] is not None and custom_data["layer2_time_s"] is not None:
             ax2 = axes[0, ax_idx]
             ax_idx +=1
-            gpu_methods = ['Hidden Layer\n(Fused)', 'Output Layer\n(Fused)', 'Mem Overhead', 'Total GPU']
+            gpu_methods = ['隐藏层\n(融合)', '输出层\n(融合)', '内存开销', '总GPU时间']
             gpu_times = [custom_data["layer1_time_s"], custom_data["layer2_time_s"], 
                          custom_data.get("overhead_s") or 0.0, custom_data["total_time_s"]]
             gpu_colors = ['lightblue', 'lightcoral', 'lightsalmon', 'green']
             
             bars2 = ax2.bar(gpu_methods, gpu_times, color=gpu_colors)
-            ax2.set_ylabel("Time (seconds)")
-            ax2.set_title("GPU MLP Breakdown (Custom Kernels)")
+            ax2.set_ylabel("时间（秒）")
+            ax2.set_title("GPU MLP分解（自定义内核）")
             ax2.tick_params(axis='x', rotation=0)
             for bar in bars2:
                 yval = bar.get_height()
                 ax2.text(bar.get_x() + bar.get_width()/2.0, yval + 0.01 * (max(gpu_times) if gpu_times else 0.001), 
                         f'{yval:.6f}', ha='center', va='bottom', fontsize=9)
-        elif num_subplots > 1 and ax_idx == 1 : # if we expected this plot but data was missing
+        elif num_subplots > 1 and ax_idx == 1 : # 如果我们预期这个图但数据缺失
             ax_missing = axes[0, ax_idx]
             ax_idx +=1
-            ax_missing.text(0.5, 0.5, 'Custom Kernel Breakdown\nnot available', ha='center', va='center', 
+            ax_missing.text(0.5, 0.5, '自定义内核分解\n不可用', ha='center', va='center', 
                            transform=ax_missing.transAxes, fontsize=10)
-            ax_missing.set_title("GPU Breakdown (Custom) N/A")
+            ax_missing.set_title("GPU分解（自定义）不可用")
 
 
-        # Subplot 3: hipBLAS Path GPU Layer Breakdown
+        # 子图3：hipBLAS路径GPU层分解
         if hipblas_data["valid"] and hipblas_data["layer1_time_s"] is not None and hipblas_data["layer2_time_s"] is not None:
             ax3 = axes[0, ax_idx]
             ax_idx +=1
             hip_gpu_methods = [
-                'L1 MatMul\n(hipBLAS)', 'L1 Bias+ReLU\n(Custom)', 
-                'L2 MatMul\n(hipBLAS)', 'L2 Bias\n(Custom)', 'Mem Overhead', 'Total GPU']
+                'L1矩阵乘法\n(hipBLAS)', 'L1偏置+ReLU\n(自定义)', 
+                'L2矩阵乘法\n(hipBLAS)', 'L2偏置\n(自定义)', '内存开销', '总GPU时间']
             hip_gpu_times = [
                 hipblas_data.get("l1_matmul_s") or 0.0, hipblas_data.get("l1_bias_relu_s") or 0.0,
                 hipblas_data.get("l2_matmul_s") or 0.0, hipblas_data.get("l2_bias_s") or 0.0,
@@ -271,33 +271,33 @@ def plot_mlp_gpu_vs_cpu_baseline(mlp_gpu_time_file, cpu_csv_file, output_dir):
             hip_gpu_colors = ['deepskyblue', 'skyblue', 'salmon', 'lightcoral', 'lightsalmon', 'purple']
             
             bars3 = ax3.bar(hip_gpu_methods, hip_gpu_times, color=hip_gpu_colors)
-            ax3.set_ylabel("Time (seconds)")
-            ax3.set_title("GPU MLP Breakdown (hipBLAS Path)")
+            ax3.set_ylabel("时间（秒）")
+            ax3.set_title("GPU MLP分解（hipBLAS路径）")
             ax3.tick_params(axis='x', rotation=20, ha="right")
             for bar in bars3:
                 yval = bar.get_height()
                 ax3.text(bar.get_x() + bar.get_width()/2.0, yval + 0.01 * (max(hip_gpu_times) if hip_gpu_times else 0.001), 
                         f'{yval:.6f}', ha='center', va='bottom', fontsize=9)
-        elif num_subplots > 1 and ax_idx > 0 and ax_idx < num_subplots: # if we expected this plot but data was missing
+        elif num_subplots > 1 and ax_idx > 0 and ax_idx < num_subplots: # 如果我们预期这个图但数据缺失
             ax_missing = axes[0, ax_idx]
             ax_idx +=1
-            ax_missing.text(0.5, 0.5, 'hipBLAS Path Breakdown\nnot available', ha='center', va='center', 
+            ax_missing.text(0.5, 0.5, 'hipBLAS路径分解\n不可用', ha='center', va='center', 
                            transform=ax_missing.transAxes, fontsize=10)
-            ax_missing.set_title("GPU Breakdown (hipBLAS) N/A")
+            ax_missing.set_title("GPU分解（hipBLAS）不可用")
 
 
         plt.tight_layout(pad=2.0)
         plot_filename = os.path.join(output_dir, "mlp_gpu_vs_cpu_baseline_comparison.png")
         plt.savefig(plot_filename)
         plt.close()
-        print(f"MLP GPU comparison plot saved to {plot_filename}")
+        print(f"MLP GPU比较图表已保存到 {plot_filename}")
 
     except Exception as e:
-        print(f"Error plotting MLP GPU vs CPU baseline: {e}")
+        print(f"绘制MLP GPU与CPU基准对比图表时出错：{e}")
 
 if __name__ == "__main__":
     if len(sys.argv) < 5:
-        print("Usage: python vis_performance.py <mlp_gpu_time_file> <cpu_perf_csv> <dcu_perf_csv> <output_plot_dir>")
+        print("用法: python vis_performance.py <mlp_gpu_time_file> <cpu_perf_csv> <dcu_perf_csv> <output_plot_dir>")
         sys.exit(1)
 
     mlp_gpu_time_file_arg = sys.argv[1]
@@ -308,9 +308,8 @@ if __name__ == "__main__":
     if not os.path.exists(output_plot_dir_arg):
         os.makedirs(output_plot_dir_arg, exist_ok=True)
 
-    print(f"--- Generating Performance Plots ---")
+    print(f"--- 生成性能图表 ---")
     plot_cpu_performance(cpu_csv_file_arg, output_plot_dir_arg)
     plot_dcu_matmul_performance(dcu_csv_file_arg, output_plot_dir_arg)
     plot_mlp_gpu_vs_cpu_baseline(mlp_gpu_time_file_arg, cpu_csv_file_arg, output_plot_dir_arg)
-    print(f"--- Plot generation complete. Check the '{output_plot_dir_arg}' directory. ---")
-
+    print(f"--- 图表生成完成。请查看'{output_plot_dir_arg}'目录。 ---")

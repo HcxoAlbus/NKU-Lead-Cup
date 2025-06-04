@@ -280,12 +280,7 @@ void matmul_mpi(int N, int M, int P, double& elapsed_time) { // 添加 elapsed_t
         } else {
             std::cerr << "Unable to open cpu_performance_data.csv for MPI results." << std::endl;
         }
-        // 可选：在 rank 0 上进行验证
-        // std::vector<double> C_ref_mpi(N * P);
-        // init_matrix(A_global, N, M); // 确保 A_global 被初始化以进行验证
-        // init_matrix(B_global, M, P); // 确保 B_global 被初始化以进行验证
-        // matmul_baseline(A_global, B_global, C_ref_mpi, N, M, P);
-        // std::cout << "[MPI] Valid: " << validate(C_global, C_ref_mpi, N, P) << std::endl;
+
     }
 }
 

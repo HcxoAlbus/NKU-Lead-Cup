@@ -6,13 +6,13 @@ import os
 from datetime import datetime
 
 def parse_log_file(log_file_path):
-    """Parses the MLP execution log file to extract performance data."""
+    """解析MLP执行日志文件以提取性能数据。"""
     epochs_data = []
     training_summary = {}
     inference_summary = {}
     predictions_data = []
 
-    # 修复正则表达式以匹配实际的日志格式
+
     epoch_pattern = re.compile(r"\[Epoch\s+(\d+)/\d+\] Train Loss: ([\d.eE+-]+), Val Loss: ([\d.eE+-]+), LR: ([\d.eE+-]+), Time: (\d+) ms")
     early_stop_pattern = re.compile(r"\[INFO\] Early stopping triggered at epoch (\d+). Best validation loss: ([\d.eE+-]+)")
     train_time_pattern = re.compile(r"\[INFO\] Training finished. Total time: (\d+) ms.")
@@ -90,90 +90,90 @@ def parse_log_file(log_file_path):
     return epochs_data, training_summary, inference_summary, predictions_data
 
 def plot_loss_vs_epoch(epochs_df, output_dir="test_results/plots"):
-    """Plots average loss per epoch."""
+    """绘制每个epoch的平均损失。"""
     if epochs_df.empty:
-        print("[WARN] No epoch data to plot for loss vs epoch.")
+        print("[WARN] 没有epoch数据可供绘制损失图表。")
         return
     plt.figure(figsize=(10, 6))
     plt.plot(epochs_df["epoch"], epochs_df["loss"], marker='o', linestyle='-')
-    plt.title("Average Training Loss per Epoch")
+    plt.title("每个Epoch的平均训练损失")
     plt.xlabel("Epoch")
-    plt.ylabel("Average Loss")
+    plt.ylabel("平均损失")
     plt.grid(True)
     plt.tight_layout()
     os.makedirs(output_dir, exist_ok=True)
     plt.savefig(os.path.join(output_dir, "loss_vs_epoch.png"))
-    print(f"[PLOT] Saved loss vs epoch plot to {os.path.join(output_dir, 'loss_vs_epoch.png')}")
+    print(f"[PLOT] 已保存损失-epoch图表到 {os.path.join(output_dir, 'loss_vs_epoch.png')}")
     plt.close()
 
 def plot_epoch_time(epochs_df, output_dir="test_results/plots"):
-    """Plots time taken per epoch."""
+    """绘制每个epoch所需的时间。"""
     if epochs_df.empty:
-        print("[WARN] No epoch data to plot for epoch time.")
+        print("[WARN] 没有epoch数据可供绘制时间图表。")
         return
     plt.figure(figsize=(10, 6))
     plt.plot(epochs_df["epoch"], epochs_df["time_ms"], marker='s', linestyle='--', color='r')
-    plt.title("Time per Training Epoch")
+    plt.title("每个训练Epoch的时间")
     plt.xlabel("Epoch")
-    plt.ylabel("Time (ms)")
+    plt.ylabel("时间 (ms)")
     plt.grid(True)
     plt.tight_layout()
     os.makedirs(output_dir, exist_ok=True)
     plt.savefig(os.path.join(output_dir, "epoch_time.png"))
-    print(f"[PLOT] Saved epoch time plot to {os.path.join(output_dir, 'epoch_time.png')}")
+    print(f"[PLOT] 已保存epoch时间图表到 {os.path.join(output_dir, 'epoch_time.png')}")
     plt.close()
 
 def plot_performance_summary(training_summary, inference_summary, output_dir="test_results/plots"):
-    """Plots summary of training and inference performance."""
-    labels = ["Training", "Inference"]
+    """绘制训练和推理性能摘要。"""
+    labels = ["训练", "推理"]
     times_ms = [training_summary.get("total_time_ms", 0), inference_summary.get("total_time_ms", 0)]
     throughputs_sps = [training_summary.get("throughput_sps", 0), inference_summary.get("throughput_sps", 0)]
 
     fig, ax1 = plt.subplots(figsize=(10, 6))
 
     color = 'tab:blue'
-    ax1.set_xlabel('Phase')
-    ax1.set_ylabel('Total Time (ms)', color=color)
-    bars = ax1.bar(labels, times_ms, color=color, alpha=0.6, width=0.4, label='Total Time (ms)')
+    ax1.set_xlabel('阶段')
+    ax1.set_ylabel('总时间 (ms)', color=color)
+    bars = ax1.bar(labels, times_ms, color=color, alpha=0.6, width=0.4, label='总时间 (ms)')
     ax1.tick_params(axis='y', labelcolor=color)
-    for bar in bars: # Add text labels on bars
+    for bar in bars: # 在柱形图上添加文本标签
         yval = bar.get_height()
         plt.text(bar.get_x() + bar.get_width()/2.0, yval + 0.05 * max(times_ms), f'{yval:.0f} ms', ha='center', va='bottom')
 
 
-    ax2 = ax1.twinx()  # instantiate a second axes that shares the same x-axis
+    ax2 = ax1.twinx()  # 实例化共享相同x轴的第二个坐标轴
     color = 'tab:red'
-    ax2.set_ylabel('Throughput (samples/sec)', color=color)  # we already handled the x-label with ax1
-    ax2.plot(labels, throughputs_sps, color=color, marker='o', linestyle=':', linewidth=2, markersize=8, label='Throughput (samples/sec)')
+    ax2.set_ylabel('吞吐量 (样本/秒)', color=color)  # 我们已经用ax1处理了x标签
+    ax2.plot(labels, throughputs_sps, color=color, marker='o', linestyle=':', linewidth=2, markersize=8, label='吞吐量 (样本/秒)')
     ax2.tick_params(axis='y', labelcolor=color)
     for i, txt in enumerate(throughputs_sps):
          ax2.annotate(f'{txt:.2f} sps', (labels[i], throughputs_sps[i]), textcoords="offset points", xytext=(0,10), ha='center', color=color)
 
 
-    fig.tight_layout()  # otherwise the right y-label is slightly clipped
-    plt.title("Training and Inference Performance Summary")
+    fig.tight_layout()  # 否则右侧y轴标签会被稍微裁剪
+    plt.title("训练和推理性能总结")
     os.makedirs(output_dir, exist_ok=True)
     plt.savefig(os.path.join(output_dir, "performance_summary.png"))
-    print(f"[PLOT] Saved performance summary plot to {os.path.join(output_dir, 'performance_summary.png')}")
+    print(f"[PLOT] 已保存性能总结图表到 {os.path.join(output_dir, 'performance_summary.png')}")
     plt.close()
 
 def plot_mse_summary(inference_summary, output_dir="test_results/plots"):
-    """Plots MSE on test set."""
+    """绘制测试集上的MSE。"""
     mse_norm = inference_summary.get("mse_normalized", float('nan'))
     mse_denorm = inference_summary.get("mse_denormalized", float('nan'))
 
     if pd.isna(mse_norm) and pd.isna(mse_denorm):
-        print("[WARN] No MSE data to plot.")
+        print("[WARN] 没有MSE数据可供绘图。")
         return
 
-    labels = ['MSE (Normalized)', 'MSE (Denormalized)']
+    labels = ['MSE (归一化)', 'MSE (反归一化)']
     values = [mse_norm, mse_denorm]
     
     plt.figure(figsize=(8, 6))
     bars = plt.bar(labels, values, color=['lightcoral', 'lightskyblue'])
-    plt.title('Mean Squared Error (MSE) on Test Set')
-    plt.ylabel('MSE Value')
-    plt.yscale('log') # MSE values can vary a lot, log scale might be better
+    plt.title('测试集上的均方误差(MSE)')
+    plt.ylabel('MSE值')
+    plt.yscale('log') # MSE值可能变化很大，对数尺度可能更好
     for bar in bars:
         yval = bar.get_height()
         if not pd.isna(yval):
@@ -181,122 +181,122 @@ def plot_mse_summary(inference_summary, output_dir="test_results/plots"):
     plt.tight_layout()
     os.makedirs(output_dir, exist_ok=True)
     plt.savefig(os.path.join(output_dir, "mse_summary.png"))
-    print(f"[PLOT] Saved MSE summary plot to {os.path.join(output_dir, 'mse_summary.png')}")
+    print(f"[PLOT] 已保存MSE总结图表到 {os.path.join(output_dir, 'mse_summary.png')}")
     plt.close()
 
 def plot_predictions(predictions_df, output_dir="test_results/plots"):
-    """Plots a sample of predicted vs actual values."""
+    """绘制预测值与实际值的样本图。"""
     if predictions_df.empty:
-        print("[WARN] No prediction data to plot.")
+        print("[WARN] 没有预测数据可供绘图。")
         return
     
-    num_samples_to_plot = min(len(predictions_df), 50) # Plot up to 50 samples
+    num_samples_to_plot = min(len(predictions_df), 50) # 最多绘制50个样本
     plot_df = predictions_df.head(num_samples_to_plot)
 
     plt.figure(figsize=(12, 7))
-    plt.plot(plot_df.index, plot_df['actual'], label='Actual Values', marker='x', linestyle='-')
-    plt.plot(plot_df.index, plot_df['predicted'], label='Predicted Values', marker='.', linestyle='--')
-    plt.title(f'Sample of Denormalized Predictions vs Actual (First {num_samples_to_plot} Test Samples)')
-    plt.xlabel('Sample Index')
-    plt.ylabel('Bandwidth Value')
+    plt.plot(plot_df.index, plot_df['actual'], label='实际值', marker='x', linestyle='-')
+    plt.plot(plot_df.index, plot_df['predicted'], label='预测值', marker='.', linestyle='--')
+    plt.title(f'反归一化预测值与实际值对比样本(前{num_samples_to_plot}个测试样本)')
+    plt.xlabel('样本索引')
+    plt.ylabel('带宽值')
     plt.legend()
     plt.grid(True)
     plt.tight_layout()
     os.makedirs(output_dir, exist_ok=True)
     plt.savefig(os.path.join(output_dir, "predictions_vs_actual.png"))
-    print(f"[PLOT] Saved predictions vs actual plot to {os.path.join(output_dir, 'predictions_vs_actual.png')}")
+    print(f"[PLOT] 已保存预测值与实际值对比图表到 {os.path.join(output_dir, 'predictions_vs_actual.png')}")
     plt.close()
 
 def plot_train_val_loss(epochs_df, output_dir="test_results/plots"):
-    """Plots training and validation loss comparison."""
+    """绘制训练和验证损失对比图。"""
     if epochs_df.empty:
-        print("[WARN] No epoch data to plot for train/val loss.")
+        print("[WARN] 没有epoch数据可供绘制训练/验证损失图。")
         return
     
     plt.figure(figsize=(12, 8))
-    plt.plot(epochs_df["epoch"], epochs_df["train_loss"], marker='o', linestyle='-', label='Training Loss', alpha=0.7)
-    plt.plot(epochs_df["epoch"], epochs_df["val_loss"], marker='s', linestyle='--', label='Validation Loss', alpha=0.7)
-    plt.title("Training vs Validation Loss")
+    plt.plot(epochs_df["epoch"], epochs_df["train_loss"], marker='o', linestyle='-', label='训练损失', alpha=0.7)
+    plt.plot(epochs_df["epoch"], epochs_df["val_loss"], marker='s', linestyle='--', label='验证损失', alpha=0.7)
+    plt.title("训练损失与验证损失对比")
     plt.xlabel("Epoch")
-    plt.ylabel("Loss")
+    plt.ylabel("损失")
     plt.legend()
     plt.grid(True, alpha=0.3)
     plt.tight_layout()
     os.makedirs(output_dir, exist_ok=True)
     plt.savefig(os.path.join(output_dir, "train_val_loss.png"))
-    print(f"[PLOT] Saved train/val loss plot to {os.path.join(output_dir, 'train_val_loss.png')}")
+    print(f"[PLOT] 已保存训练/验证损失对比图表到 {os.path.join(output_dir, 'train_val_loss.png')}")
     plt.close()
 
 def plot_learning_rate_schedule(epochs_df, output_dir="test_results/plots"):
-    """Plots learning rate schedule over epochs."""
+    """绘制不同epoch下的学习率变化图。"""
     if epochs_df.empty or 'learning_rate' not in epochs_df.columns:
-        print("[WARN] No learning rate data to plot.")
+        print("[WARN] 没有学习率数据可供绘图。")
         return
     
     plt.figure(figsize=(10, 6))
     plt.plot(epochs_df["epoch"], epochs_df["learning_rate"], marker='o', linestyle='-', color='green')
-    plt.title("Learning Rate Schedule")
+    plt.title("学习率变化图")
     plt.xlabel("Epoch")
-    plt.ylabel("Learning Rate")
-    plt.yscale('log')  # Log scale for better visualization
+    plt.ylabel("学习率")
+    plt.yscale('log')  # 对数尺度以便更好地可视化
     plt.grid(True, alpha=0.3)
     plt.tight_layout()
     os.makedirs(output_dir, exist_ok=True)
     plt.savefig(os.path.join(output_dir, "learning_rate_schedule.png"))
-    print(f"[PLOT] Saved learning rate schedule plot to {os.path.join(output_dir, 'learning_rate_schedule.png')}")
+    print(f"[PLOT] 已保存学习率变化图表到 {os.path.join(output_dir, 'learning_rate_schedule.png')}")
     plt.close()
 
 def plot_overfitting_analysis(epochs_df, output_dir="test_results/plots"):
-    """Plots overfitting analysis showing train/val loss gap."""
+    """绘制过拟合分析图，展示训练/验证损失间隙。"""
     if epochs_df.empty or 'train_loss' not in epochs_df.columns or 'val_loss' not in epochs_df.columns:
-        print("[WARN] No train/val loss data for overfitting analysis.")
+        print("[WARN] 没有训练/验证损失数据可供过拟合分析。")
         return
     
-    # Calculate loss difference (val_loss - train_loss)
+    # 计算损失差异 (val_loss - train_loss)
     loss_gap = epochs_df["val_loss"] - epochs_df["train_loss"]
     
     plt.figure(figsize=(12, 6))
     plt.subplot(1, 2, 1)
-    plt.plot(epochs_df["epoch"], epochs_df["train_loss"], label='Training Loss', color='blue')
-    plt.plot(epochs_df["epoch"], epochs_df["val_loss"], label='Validation Loss', color='red')
-    plt.title("Training vs Validation Loss")
+    plt.plot(epochs_df["epoch"], epochs_df["train_loss"], label='训练损失', color='blue')
+    plt.plot(epochs_df["epoch"], epochs_df["val_loss"], label='验证损失', color='red')
+    plt.title("训练损失与验证损失")
     plt.xlabel("Epoch")
-    plt.ylabel("Loss")
+    plt.ylabel("损失")
     plt.legend()
     plt.grid(True, alpha=0.3)
     
     plt.subplot(1, 2, 2)
     plt.plot(epochs_df["epoch"], loss_gap, color='orange', linewidth=2)
     plt.axhline(y=0, color='black', linestyle='--', alpha=0.5)
-    plt.title("Overfitting Gap (Val Loss - Train Loss)")
+    plt.title("过拟合间隙 (验证损失 - 训练损失)")
     plt.xlabel("Epoch")
-    plt.ylabel("Loss Difference")
+    plt.ylabel("损失差异")
     plt.grid(True, alpha=0.3)
     
     plt.tight_layout()
     os.makedirs(output_dir, exist_ok=True)
     plt.savefig(os.path.join(output_dir, "overfitting_analysis.png"))
-    print(f"[PLOT] Saved overfitting analysis plot to {os.path.join(output_dir, 'overfitting_analysis.png')}")
+    print(f"[PLOT] 已保存过拟合分析图表到 {os.path.join(output_dir, 'overfitting_analysis.png')}")
     plt.close()
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Visualize MLP performance results from a log file.")
-    parser.add_argument("log_file", help="Path to the log file generated by run_mlp_test.sh")
+    parser = argparse.ArgumentParser(description="从日志文件中可视化MLP性能结果。")
+    parser.add_argument("log_file", help="由run_mlp_test.sh生成的日志文件路径")
     args = parser.parse_args()
 
     if not os.path.exists(args.log_file):
-        print(f"[ERROR] Log file not found: {args.log_file}")
+        print(f"[ERROR] 找不到日志文件: {args.log_file}")
         exit(1)
 
-    print(f"[INFO] Parsing log file: {args.log_file}")
+    print(f"[INFO] 正在解析日志文件: {args.log_file}")
     epochs_data, training_summary, inference_summary, predictions_data = parse_log_file(args.log_file)
 
-    # Create a directory for plots based on the log file name
+    # 根据日志文件名创建图表目录
     log_file_basename = os.path.splitext(os.path.basename(args.log_file))[0]
-    plot_output_dir = os.path.join(os.path.dirname(args.log_file) or ".", "plots", log_file_basename) # Place plots in a subfolder related to the log
+    plot_output_dir = os.path.join(os.path.dirname(args.log_file) or ".", "plots", log_file_basename) # 将图表放在与日志相关的子文件夹中
     
-    print(f"[INFO] Plots will be saved in: {plot_output_dir}")
+    print(f"[INFO] 图表将保存在: {plot_output_dir}")
 
     epochs_df = pd.DataFrame(epochs_data)
     predictions_df = pd.DataFrame(predictions_data)
@@ -313,5 +313,4 @@ if __name__ == "__main__":
     plot_learning_rate_schedule(epochs_df, output_dir=plot_output_dir)
     plot_overfitting_analysis(epochs_df, output_dir=plot_output_dir)
     
-    print("[INFO] Visualization script finished.")
-
+    print("[INFO] 可视化脚本已完成。")
